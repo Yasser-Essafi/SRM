@@ -1,0 +1,188 @@
+"""
+Layout components for SRM application.
+Provides header, sidebar, and RTL (Right-to-Left) CSS support for Arabic.
+"""
+import streamlit as st
+from config.settings import settings
+
+
+def inject_rtl_css():
+    """
+    Inject custom CSS for Right-to-Left (RTL) support and Arabic styling.
+    """
+    st.markdown("""
+    <style>
+        /* RTL Support for Arabic */
+        .stApp {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        /* Chat messages */
+        .stChatMessage {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        /* Text inputs */
+        .stTextInput > div > div > input {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        /* Text areas */
+        .stTextArea > div > div > textarea {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        /* Markdown content */
+        .stMarkdown {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        /* Sidebar */
+        [data-testid="stSidebar"] {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        /* Headers */
+        h1, h2, h3, h4, h5, h6 {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        /* Lists */
+        ul, ol {
+            direction: rtl;
+            text-align: right;
+            padding-right: 20px;
+            padding-left: 0;
+        }
+        
+        /* Custom styling for better Arabic font rendering */
+        * {
+            font-family: 'Segoe UI', 'Tahoma', 'Arial', sans-serif;
+        }
+        
+        /* Chat input */
+        .stChatInputContainer {
+            direction: rtl;
+        }
+        
+        /* File uploader */
+        [data-testid="stFileUploader"] {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        /* Success/Error/Warning boxes */
+        .stSuccess, .stError, .stWarning, .stInfo {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        /* Custom header styling */
+        .main-header {
+            background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            color: white;
+            text-align: center;
+        }
+        
+        .main-header h1 {
+            margin: 0;
+            color: white;
+            text-align: center;
+        }
+        
+        /* Sidebar styling */
+        .sidebar-info {
+            background-color: #f0f9ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-right: 4px solid #3b82f6;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def render_header():
+    """
+    Render the main application header with branding.
+    """
+    st.markdown(f"""
+    <div class="main-header">
+        <h1>{settings.APP_ICON} {settings.APP_TITLE}</h1>
+        <p style="margin: 5px 0 0 0; font-size: 14px;">مساعدك الذكي لخدمات المياه والكهرباء</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def render_sidebar():
+    """
+    Render the sidebar with information and instructions.
+    """
+    with st.sidebar:
+        st.markdown("### 📋 معلومات النظام")
+        
+        st.markdown("""
+        <div class="sidebar-info">
+            <h4>🎯 كيفية الاستخدام</h4>
+            <ol>
+                <li>ابدأ المحادثة مع المساعد</li>
+                <li>قدم رقم CIL الخاص بك (8 أرقام)</li>
+                <li>يمكنك رفع صورة الفاتورة لاستخراج الرقم تلقائياً</li>
+                <li>سيساعدك المساعد في فهم سبب الانقطاع</li>
+            </ol>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div class="sidebar-info">
+            <h4>💡 الخدمات المتوفرة</h4>
+            <ul>
+                <li>التحقق من حالة الدفع</li>
+                <li>معرفة سبب انقطاع الخدمة</li>
+                <li>معلومات عن الصيانة في منطقتك</li>
+                <li>إرشادات للدفع</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div class="sidebar-info">
+            <h4>📞 للمساعدة</h4>
+            <p>رقم الطوارئ: <strong>0800-000-000</strong></p>
+            <p>البريد الإلكتروني: <strong>support@srm.ma</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # Testing CIL numbers
+        with st.expander("🔢 أرقام CIL للاختبار"):
+            st.markdown("""
+            - **12345678** - أحمد (مدفوع، صيانة)
+            - **87654321** - فاطمة (غير مدفوع)
+            - **11223344** - محمد (مدفوع، لا صيانة)
+            - **55667788** - خديجة (مدفوع، لا صيانة)
+            - **99887766** - يوسف (غير مدفوع)
+            """)
+
+
+def render_footer():
+    """
+    Render the application footer.
+    """
+    st.markdown("---")
+    st.markdown("""
+    <div style="text-align: center; color: #666; font-size: 12px; padding: 10px;">
+        © 2024 SRM - نظام إدارة المياه والكهرباء | جميع الحقوق محفوظة
+    </div>
+    """, unsafe_allow_html=True)
