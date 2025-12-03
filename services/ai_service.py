@@ -98,12 +98,12 @@ def _check_maintenance_impl(cil: str) -> str:
 # Create tool wrappers with decorator
 @tool
 def check_payment(cil: str) -> str:
-    """يستخدم للتحقق من حالة الدفع والرصيد المستحق للعميل. يتطلب رقم CIL (8 أرقام).
+    """يستخدم للتحقق من حالة الدفع والرصيد المستحق للعميل. يتطلب رقم CIL (مثال: 1071324-101).
     
     Check payment status and outstanding balance for a customer by CIL number.
     
     Args:
-        cil: Customer Identification Number (8 digits)
+        cil: Customer Identification Number (format: 1071324-101)
         
     Returns:
         str: Payment status information in Arabic
@@ -118,7 +118,7 @@ def check_maintenance(cil: str) -> str:
     Check for maintenance and outages in customer's zone. Requires CIL number.
     
     Args:
-        cil: Customer Identification Number (8 digits)
+        cil: Customer Identification Number (format: 1071324-101)
         
     Returns:
         str: Maintenance information in Arabic
@@ -136,7 +136,7 @@ SYSTEM_PROMPT = """أنت مساعد خدمة العملاء لشركة SRM (إ�
 دورك:
 1. التحدث باللغة العربية الفصحى بشكل احترافي ومهذب
 2. مساعدة المواطنين في فهم سبب انقطاع الماء أو الكهرباء
-3. طلب رقم CIL (رقم العميل المكون من 8 أرقام) إذا لم يتم تقديمه
+3. طلب رقم CIL (رقم العميل بصيغة: 1071324-101) إذا لم يتم تقديمه
 4. التحقق من حالة الدفع أولاً
 5. إذا كان الدفع منتظم، التحقق من الصيانة في المنطقة
 6. تقديم معلومات واضحة ومفيدة

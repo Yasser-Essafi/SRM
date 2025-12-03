@@ -131,7 +131,7 @@ def extract_bill_information(image_bytes: bytes) -> Dict[str, Any]:
         
     Returns:
         dict: Extracted information with keys:
-            - cil: Customer ID (8 digits)
+            - cil: Customer ID (format: 1071324-101)
             - name: Customer name
             - amount_due: Amount to pay
             - due_date: Payment due date

@@ -98,7 +98,7 @@ srm/
 #### ocr_service.py Features:
 - ✅ `extract_cil_from_image(bytes)` - Extract CIL from bill images
 - ✅ Uses Azure Document Intelligence (prebuilt-read)
-- ✅ Regex pattern matching for 8-digit numbers
+- ✅ Regex pattern matching for CIL format (7-3 digits)
 
 ---
 

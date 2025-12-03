@@ -156,7 +156,7 @@ Use these CIL numbers to test different scenarios:
 ### 📄 services/ocr_service.py
 - `extract_cil_from_image()`: Extracts CIL from uploaded bill images
 - Uses Azure Document Intelligence (prebuilt-read model)
-- Regex pattern matching for 8-digit CIL numbers
+- Regex pattern matching for CIL numbers (format: 1071324-101)
 
 ### 🎨 ui/layout.py
 - `inject_rtl_css()`: Injects RTL (Right-to-Left) CSS for Arabic

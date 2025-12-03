@@ -202,7 +202,7 @@ app.py (Entry Point)
 ```
 Agent receives user message
     │
-    ├─ Does message contain 8-digit CIL?
+    ├─ Does message contain CIL (1071324-101)?
     │   ├─ YES → Store CIL, proceed
     │   └─ NO → Ask user for CIL
     │
