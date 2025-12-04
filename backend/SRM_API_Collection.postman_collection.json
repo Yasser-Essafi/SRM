@@ -1,0 +1,370 @@
+{
+	"info": {
+		"_postman_id": "srm-api-collection-2024",
+		"name": "SRM API Collection",
+		"description": "Collection complète des APIs du backend SRM pour l'équipe frontend.\n\n**Base URL:** http://localhost:5000/api\n\n**Services disponibles:**\n- Health Check\n- Chat (avec gestion de conversations)\n- OCR (extraction de documents)\n- Speech-to-Text (reconnaissance vocale)\n\n**Configuration requise:**\nAssurez-vous que le fichier `.env` contient toutes les clés Azure nécessaires.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Health",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"health"
+							]
+						},
+						"description": "Vérifie que le serveur fonctionne correctement.\n\n**Réponse attendue:**\n```json\n{\n  \"status\": \"healthy\",\n  \"message\": \"SRM API is running\",\n  \"message_ar\": \"نظام SRM يعمل بشكل صحيح\"\n}\n```"
+					},
+					"response": []
+				}
+			],
+			"description": "Endpoints de santé du serveur"
+		},
+		{
+			"name": "Chat",
+			"item": [
+				{
+					"name": "Send Message (New Conversation)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Sauvegarder le conversation_id pour les prochaines requêtes",
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set(\"conversation_id\", jsonData.conversation_id);",
+									"    console.log(\"Conversation ID saved: \" + jsonData.conversation_id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"message\": \"مرحبا، أريد معرفة حالة خدمتي\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/chat",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"chat"
+							]
+						},
+						"description": "Envoyer le premier message et créer une nouvelle conversation.\n\n**Body:**\n```json\n{\n  \"message\": \"مرحبا، أريد معرفة حالة خدمتي\"\n}\n```\n\n**Réponse:**\n```json\n{\n  \"response\": \"مرحبا بك! كيف يمكنني مساعدتك اليوم؟\",\n  \"conversation_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"is_new_conversation\": true,\n  \"status\": \"success\"\n}\n```\n\nLe `conversation_id` est automatiquement sauvegardé dans les variables de collection."
+					},
+					"response": []
+				},
+				{
+					"name": "Send Message (Continue Conversation)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"message\": \"رقم CIL الخاص بي هو: 1071324-101\",\n  \"conversation_id\": \"{{conversation_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/chat",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"chat"
+							]
+						},
+						"description": "Continuer une conversation existante.\n\n**Body:**\n```json\n{\n  \"message\": \"رقم CIL الخاص بي هو: 1071324-101\",\n  \"conversation_id\": \"550e8400-e29b-41d4-a716-446655440000\"\n}\n```\n\n**Réponse:**\n```json\n{\n  \"response\": \"شكراً لتقديم رقم CIL الخاص بك...\",\n  \"conversation_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"is_new_conversation\": false,\n  \"status\": \"success\"\n}\n```\n\nUtilise automatiquement le `conversation_id` sauvegardé."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Conversation History",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/chat/history/{{conversation_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"chat",
+								"history",
+								"{{conversation_id}}"
+							]
+						},
+						"description": "Récupérer l'historique complet d'une conversation.\n\n**Réponse:**\n```json\n{\n  \"conversation_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"created_at\": \"2024-12-04T10:30:00\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"مرحبا\",\n      \"timestamp\": \"2024-12-04T10:30:00\"\n    },\n    {\n      \"role\": \"assistant\",\n      \"content\": \"مرحبا بك...\",\n      \"timestamp\": \"2024-12-04T10:30:05\"\n    }\n  ],\n  \"message_count\": 2,\n  \"status\": \"success\"\n}\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "Reset Chat Session",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/chat/reset",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"chat",
+								"reset"
+							]
+						},
+						"description": "Réinitialiser la session de chat.\n\n**Réponse:**\n```json\n{\n  \"message\": \"Chat session reset\",\n  \"message_ar\": \"تم إعادة تعيين المحادثة\",\n  \"status\": \"success\"\n}\n```"
+					},
+					"response": []
+				}
+			],
+			"description": "Endpoints de chat avec gestion de conversations"
+		},
+		{
+			"name": "OCR",
+			"item": [
+				{
+					"name": "Extract Text from Image",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "image",
+									"type": "file",
+									"src": [],
+									"description": "Fichier image (JPG, PNG, PDF) contenant le document"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/ocr/extract",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"ocr",
+								"extract"
+							]
+						},
+						"description": "Extraire le texte d'un document image avec Azure Document Intelligence.\n\n**Body:** form-data\n- `image` (File): Fichier image (JPG, PNG, PDF)\n\n**Réponse:**\n```json\n{\n  \"text\": \"Texte extrait du document...\",\n  \"confidence\": 0.95,\n  \"status\": \"success\"\n}\n```\n\n**Instructions Postman:**\n1. Sélectionner Body > form-data\n2. Key: `image`, Type: **File**\n3. Cliquer sur \"Select Files\" et choisir votre image"
+					},
+					"response": []
+				}
+			],
+			"description": "Endpoints d'extraction de texte OCR"
+		},
+		{
+			"name": "Speech",
+			"item": [
+				{
+					"name": "Get Supported Languages",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/speech/languages",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"speech",
+								"languages"
+							]
+						},
+						"description": "Obtenir la liste des langues supportées pour la reconnaissance vocale.\n\n**Réponse:**\n```json\n{\n  \"languages\": {\n    \"ar-SA\": \"العربية (السعودية)\",\n    \"ar-EG\": \"العربية (مصر)\",\n    \"ar-MA\": \"العربية (المغرب)\",\n    \"ar-AE\": \"العربية (الإمارات)\",\n    \"fr-FR\": \"Français (France)\",\n    \"fr-MA\": \"Français (Maroc)\"\n  },\n  \"status\": \"success\"\n}\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "Speech to Text",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "audio",
+									"type": "file",
+									"src": [],
+									"description": "Fichier audio (WAV, MP3, OGG, WebM, M4A, FLAC)"
+								},
+								{
+									"key": "language",
+									"value": "ar-MA",
+									"type": "text",
+									"description": "Code langue (ar-MA, ar-SA, fr-FR, etc.)"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/speech-to-text",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"speech-to-text"
+							]
+						},
+						"description": "Convertir un fichier audio en texte uniquement.\n\n**Body:** form-data\n- `audio` (File): Fichier audio (WAV, MP3, OGG, WebM, M4A, FLAC)\n- `language` (Text, optionnel): Code langue (défaut: ar-SA)\n\n**Réponse:**\n```json\n{\n  \"text\": \"مرحبا، أريد معرفة حالة خدمتي\",\n  \"language\": \"ar-MA\",\n  \"status\": \"success\"\n}\n```\n\n**Instructions Postman:**\n1. Sélectionner Body > form-data\n2. Ligne 1: Key: `audio`, Type: **File**, choisir votre fichier audio\n3. Ligne 2: Key: `language`, Type: Text, Value: `ar-MA`"
+					},
+					"response": []
+				},
+				{
+					"name": "Speech to Chat (New Conversation)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Sauvegarder le conversation_id",
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.collectionVariables.set(\"conversation_id\", jsonData.conversation_id);",
+									"    console.log(\"Conversation ID saved: \" + jsonData.conversation_id);",
+									"    console.log(\"Transcribed: \" + jsonData.transcribed_text);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "audio",
+									"type": "file",
+									"src": [],
+									"description": "Fichier audio"
+								},
+								{
+									"key": "language",
+									"value": "ar-MA",
+									"type": "text",
+									"description": "Code langue"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/speech-to-chat",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"speech-to-chat"
+							]
+						},
+						"description": "Convertir audio en texte ET envoyer directement au chat agent (nouvelle conversation).\n\n**Body:** form-data\n- `audio` (File): Fichier audio\n- `language` (Text, optionnel): Code langue (défaut: ar-SA)\n\n**Réponse:**\n```json\n{\n  \"transcribed_text\": \"مرحبا\",\n  \"response\": \"مرحبا بك! كيف يمكنني مساعدتك اليوم؟\",\n  \"conversation_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"is_new_conversation\": true,\n  \"language\": \"ar-MA\",\n  \"status\": \"success\"\n}\n```\n\nLe `conversation_id` est automatiquement sauvegardé."
+					},
+					"response": []
+				},
+				{
+					"name": "Speech to Chat (Continue Conversation)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "audio",
+									"type": "file",
+									"src": [],
+									"description": "Fichier audio"
+								},
+								{
+									"key": "conversation_id",
+									"value": "{{conversation_id}}",
+									"type": "text",
+									"description": "ID de conversation existante"
+								},
+								{
+									"key": "language",
+									"value": "ar-MA",
+									"type": "text",
+									"description": "Code langue (optionnel)"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/speech-to-chat",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"speech-to-chat"
+							]
+						},
+						"description": "Convertir audio en texte ET envoyer au chat agent (conversation existante).\n\n**Body:** form-data\n- `audio` (File): Fichier audio\n- `conversation_id` (Text): ID de la conversation\n- `language` (Text, optionnel): Code langue\n\n**Réponse:**\n```json\n{\n  \"transcribed_text\": \"رقم CIL الخاص بي هو: 1071324-101\",\n  \"response\": \"شكراً لتقديم رقم CIL الخاص بك...\",\n  \"conversation_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"is_new_conversation\": false,\n  \"language\": \"ar-MA\",\n  \"status\": \"success\"\n}\n```"
+					},
+					"response": []
+				}
+			],
+			"description": "Endpoints de reconnaissance vocale (Speech-to-Text)"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:5000/api",
+			"type": "string"
+		},
+		{
+			"key": "conversation_id",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
