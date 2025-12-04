@@ -7,3 +7,7 @@ pandas==2.1.4
 python-dotenv==1.0.0
 azure-ai-documentintelligence==1.0.0b1
 Pillow==10.1.0
+# Flask Backend
+Flask==3.0.0
+Flask-CORS==4.0.0
+gunicorn==21.2.0

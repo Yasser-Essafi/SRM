@@ -66,7 +66,7 @@ except Exception as e:
 # Test 6: Main app
 print("\n6️⃣ Testing main app...")
 try:
-    import app
+    import SRM.old_app as old_app
     print("   ✅ Main app module imported")
 except Exception as e:
     print(f"   ❌ Error: {e}")

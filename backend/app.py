@@ -5,14 +5,17 @@ Main entry point for the backend server.
 import sys
 from pathlib import Path
 
-# Add parent directory to path to import from config and services
-sys.path.insert(0, str(Path(__file__).parent.parent))
+
+parent_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(parent_dir))
 
 from flask import Flask
 from flask_cors import CORS
-from routes.chat import chat_bp
-from routes.ocr import ocr_bp
-from routes.health import health_bp
+
+
+from backend.routes.chat import chat_bp
+from backend.routes.ocr import ocr_bp
+from backend.routes.health import health_bp
 from config.settings import settings
 
 
@@ -26,9 +29,10 @@ def create_app():
     app = Flask(__name__)
     
     # CORS configuration - allow frontend to communicate
+    # For production, replace "*" with your actual frontend domain
     CORS(app, resources={
         r"/api/*": {
-            "origins": ["http://localhost:3000", "http://localhost:8501"],
+            "origins": "*",  # Update this for production security
             "methods": ["GET", "POST", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"]
         }
@@ -46,6 +50,10 @@ def create_app():
     return app
 
 
+# For Azure App Service - this is called by gunicorn
+app = create_app()
+
+
 if __name__ == '__main__':
     # Validate configuration
     is_valid, errors = settings.validate()
@@ -57,7 +65,6 @@ if __name__ == '__main__':
     
     print("✅ Configuration validated successfully")
     
-    app = create_app()
     app.run(
         host='0.0.0.0',
         port=5000,
