@@ -3,6 +3,12 @@ Chat API endpoints for agent interactions.
 """
 from flask import Blueprint, request, jsonify
 from services.ai_service import initialize_agent, run_agent
+from data.mock_db import (
+    create_conversation, 
+    get_conversation, 
+    add_message_to_conversation,
+    get_conversation_history
+)
 
 chat_bp = Blueprint('chat', __name__)
 
@@ -26,14 +32,15 @@ def chat():
     Request Body:
         {
             "message": "رقم CIL الخاص بي هو: 1071324-101",
-            "chat_history": [
-                {"role": "user", "content": "مرحبا"},
-                {"role": "assistant", "content": "مرحبا بك"}
-            ]
+            "conversation_id": "optional-uuid-string"
         }
     
     Returns:
-        JSON: Agent response
+        JSON: {
+            "response": "...",
+            "conversation_id": "uuid-string",
+            "status": "success"
+        }
     """
     try:
         data = request.get_json()
@@ -45,7 +52,27 @@ def chat():
             }), 400
         
         user_message = data['message']
-        chat_history = data.get('chat_history', [])
+        conversation_id = data.get('conversation_id')
+        
+        # Create new conversation if no ID provided
+        if not conversation_id:
+            conversation_id = create_conversation()
+            is_new_conversation = True
+        else:
+            # Verify conversation exists
+            conversation = get_conversation(conversation_id)
+            if not conversation:
+                return jsonify({
+                    'error': 'Invalid conversation_id',
+                    'error_ar': 'معرف المحادثة غير صالح'
+                }), 404
+            is_new_conversation = False
+        
+        # Get conversation history
+        chat_history = get_conversation_history(conversation_id)
+        
+        # Store user message
+        add_message_to_conversation(conversation_id, 'user', user_message)
         
         # Get agent
         agent_instance = get_agent()
@@ -55,11 +82,16 @@ def chat():
                 'error_ar': 'فشل تهيئة النظام'
             }), 500
         
-        # Run agent
+        # Run agent with conversation history
         response = run_agent(agent_instance, user_message, chat_history)
+        
+        # Store assistant response
+        add_message_to_conversation(conversation_id, 'assistant', response)
         
         return jsonify({
             'response': response,
+            'conversation_id': conversation_id,
+            'is_new_conversation': is_new_conversation,
             'status': 'success'
         }), 200
         
@@ -83,3 +115,38 @@ def reset_chat():
         'message_ar': 'تم إعادة تعيين المحادثة',
         'status': 'success'
     }), 200
+
+
+@chat_bp.route('/chat/history/<conversation_id>', methods=['GET'])
+def get_history(conversation_id: str):
+    """
+    Get conversation history by conversation_id.
+    
+    Args:
+        conversation_id: Unique conversation identifier
+    
+    Returns:
+        JSON: Conversation history with all messages
+    """
+    try:
+        conversation = get_conversation(conversation_id)
+        
+        if not conversation:
+            return jsonify({
+                'error': 'Conversation not found',
+                'error_ar': 'المحادثة غير موجودة'
+            }), 404
+        
+        return jsonify({
+            'conversation_id': conversation_id,
+            'created_at': conversation['created_at'],
+            'messages': conversation['messages'],
+            'message_count': len(conversation['messages']),
+            'status': 'success'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'error_ar': 'حدث خطأ في جلب المحادثة'
+        }), 500
