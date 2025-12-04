@@ -1,0 +1,13 @@
+{
+  "message": "رقم CIL الخاص بي هو: 1071324-101",
+  "chat_history": [
+    {
+      "role": "user",
+      "content": "مرحبا"
+    },
+    {
+      "role": "assistant",
+      "content": "مرحباً بك في خدمة عملاء SRM! كيف يمكنني مساعدتك؟"
+    }
+  ]
+}
