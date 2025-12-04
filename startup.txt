@@ -1,3 +1,5 @@
-gunicorn --bind=0.0.0.0:8000 --timeout 600 --chdir backend app:create_app()
+gunicorn --bind=0.0.0.0:8000 --timeout 600 backend.app:app
+
+
 
 
