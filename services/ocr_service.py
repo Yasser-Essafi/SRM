@@ -30,11 +30,20 @@ def extract_cil_from_image(image_bytes: bytes) -> Optional[str]:
         )
         
         # Analyze the document
-        poller = client.begin_analyze_document(
-            "prebuilt-read",
-            body=image_bytes,
-            content_type="application/octet-stream"
-        )
+        # Try newer SDK format first, fallback to older format
+        try:
+            poller = client.begin_analyze_document(
+                "prebuilt-read",
+                analyze_request=image_bytes,
+                content_type="application/octet-stream"
+            )
+        except TypeError:
+            # Fallback for newer SDK version
+            poller = client.begin_analyze_document(
+                "prebuilt-read",
+                body=image_bytes,
+                content_type="application/octet-stream"
+            )
         
         result = poller.result()
         
@@ -94,11 +103,19 @@ def extract_text_from_image(image_bytes: bytes) -> Optional[str]:
             credential=AzureKeyCredential(settings.AZURE_DOCUMENT_INTELLIGENCE_KEY)
         )
         
-        poller = client.begin_analyze_document(
-            "prebuilt-read",
-            body=image_bytes,
-            content_type="application/octet-stream"
-        )
+        # Handle both old (analyze_request) and new (body) parameter formats for SDK compatibility
+        try:
+            poller = client.begin_analyze_document(
+                "prebuilt-read",
+                analyze_request=image_bytes,
+                content_type="application/octet-stream"
+            )
+        except TypeError:
+            poller = client.begin_analyze_document(
+                "prebuilt-read",
+                body=image_bytes,
+                content_type="application/octet-stream"
+            )
         
         result = poller.result()
         
@@ -151,12 +168,19 @@ def extract_bill_information(image_bytes: bytes) -> Dict[str, Any]:
             credential=AzureKeyCredential(settings.AZURE_DOCUMENT_INTELLIGENCE_KEY)
         )
         
-        # Analyze document
-        poller = client.begin_analyze_document(
-            "prebuilt-read",
-            body=image_bytes,
-            content_type="application/octet-stream"
-        )
+        # Analyze document - Handle both old (analyze_request) and new (body) parameter formats for SDK compatibility
+        try:
+            poller = client.begin_analyze_document(
+                "prebuilt-read",
+                analyze_request=image_bytes,
+                content_type="application/octet-stream"
+            )
+        except TypeError:
+            poller = client.begin_analyze_document(
+                "prebuilt-read",
+                body=image_bytes,
+                content_type="application/octet-stream"
+            )
         
         result = poller.result()
         
