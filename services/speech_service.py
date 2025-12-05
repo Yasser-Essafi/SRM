@@ -1,6 +1,6 @@
 """
-Azure Speech Service for speech-to-text conversion.
-Handles audio file recognition and real-time streaming.
+Azure Speech Service for speech-to-text and text-to-speech conversion.
+Handles audio file recognition and speech synthesis.
 """
 import os
 import azure.cognitiveservices.speech as speechsdk
@@ -182,3 +182,116 @@ def get_supported_languages() -> dict:
         "es-MX": "Español (México)",
         "auto": "Détection automatique / Auto-detect"
     }
+
+
+def get_available_voices() -> dict:
+    """
+    Get available neural voices for text-to-speech.
+    
+    Returns:
+        dict: Dictionary of language codes with available voices
+    """
+    return {
+        "ar-MA": {
+            "default": "ar-MA-JamalNeural",
+            "voices": [
+                {"name": "ar-MA-JamalNeural", "gender": "Male"},
+                {"name": "ar-MA-MounaNeural", "gender": "Female"}
+            ]
+        },
+        "ar-SA": {
+            "default": "ar-SA-HamedNeural",
+            "voices": [
+                {"name": "ar-SA-HamedNeural", "gender": "Male"},
+                {"name": "ar-SA-ZariyahNeural", "gender": "Female"}
+            ]
+        },
+        "ar-EG": {
+            "default": "ar-EG-ShakirNeural",
+            "voices": [
+                {"name": "ar-EG-ShakirNeural", "gender": "Male"},
+                {"name": "ar-EG-SalmaNeural", "gender": "Female"}
+            ]
+        },
+        "fr-FR": {
+            "default": "fr-FR-HenriNeural",
+            "voices": [
+                {"name": "fr-FR-HenriNeural", "gender": "Male"},
+                {"name": "fr-FR-DeniseNeural", "gender": "Female"}
+            ]
+        },
+        "en-US": {
+            "default": "en-US-GuyNeural",
+            "voices": [
+                {"name": "en-US-GuyNeural", "gender": "Male"},
+                {"name": "en-US-JennyNeural", "gender": "Female"}
+            ]
+        }
+    }
+
+
+def text_to_speech(text: str, language: str = "ar-MA", voice: str = None) -> Tuple[bool, Optional[bytes], Optional[str]]:
+    """
+    Convert text to speech audio using Azure Speech Service.
+    
+    Args:
+        text: Text to convert to speech
+        language: Language code (default: ar-MA for Moroccan Arabic)
+        voice: Specific voice name (optional, uses default for language if not specified)
+    
+    Returns:
+        tuple: (success: bool, audio_data: bytes, error_message: str)
+    """
+    try:
+        # Validate configuration
+        if not settings.AZURE_SPEECH_KEY or not settings.AZURE_SPEECH_REGION:
+            return False, None, "Azure Speech credentials not configured"
+        
+        # Validate text
+        if not text or not text.strip():
+            return False, None, "Text cannot be empty"
+        
+        # Create speech configuration
+        speech_config = speechsdk.SpeechConfig(
+            subscription=settings.AZURE_SPEECH_KEY,
+            region=settings.AZURE_SPEECH_REGION
+        )
+        
+        # Set voice
+        available_voices = get_available_voices()
+        if voice:
+            speech_config.speech_synthesis_voice_name = voice
+        elif language in available_voices:
+            speech_config.speech_synthesis_voice_name = available_voices[language]["default"]
+        else:
+            # Fallback to Moroccan Arabic
+            speech_config.speech_synthesis_voice_name = "ar-MA-JamalNeural"
+        
+        # Set output format to MP3
+        speech_config.set_speech_synthesis_output_format(
+            speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3
+        )
+        
+        # Create synthesizer with no audio output (we want the bytes)
+        synthesizer = speechsdk.SpeechSynthesizer(
+            speech_config=speech_config,
+            audio_config=None  # No audio output, we want bytes
+        )
+        
+        # Synthesize speech
+        result = synthesizer.speak_text_async(text).get()
+        
+        # Check result
+        if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+            return True, result.audio_data, None
+        elif result.reason == speechsdk.ResultReason.Canceled:
+            cancellation = result.cancellation_details
+            error_msg = f"Speech synthesis canceled: {cancellation.reason}"
+            if cancellation.reason == speechsdk.CancellationReason.Error:
+                error_msg += f" - Error: {cancellation.error_details}"
+            return False, None, error_msg
+        else:
+            return False, None, f"Unexpected result: {result.reason}"
+            
+    except Exception as e:
+        return False, None, f"Exception during speech synthesis: {str(e)}"
