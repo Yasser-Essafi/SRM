@@ -19,8 +19,8 @@ from data.mock_db import (
 
 speech_bp = Blueprint('speech', __name__)
 
-# Allowed audio file extensions
-ALLOWED_EXTENSIONS = {'wav', 'mp3', 'ogg', 'webm', 'm4a', 'flac'}
+# Allowed audio file extensions - Only WAV format
+ALLOWED_EXTENSIONS = {'wav'}
 UPLOAD_FOLDER = 'uploads/audio'
 
 # Ensure upload folder exists
@@ -28,8 +28,11 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
 def allowed_file(filename):
-    """Check if file extension is allowed."""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    """Check if file extension is allowed. Accepts only WAV format."""
+    if not filename or '.' not in filename:
+        return False
+    ext = filename.rsplit('.', 1)[1].lower()
+    return ext in ALLOWED_EXTENSIONS
 
 
 @speech_bp.route('/speech/languages', methods=['GET'])
@@ -86,8 +89,8 @@ def speech_to_text():
                 'error_ar': 'نوع الملف غير مسموح به'
             }), 400
         
-        # Get language parameter (default to Arabic - Saudi Arabia)
-        language = request.form.get('language', 'ar-SA')
+        # Get language parameter (optional, defaults to ar-MA)
+        language = request.form.get('language', 'ar-MA')
         
         # Save file temporarily
         filename = secure_filename(audio_file.filename)
@@ -95,13 +98,13 @@ def speech_to_text():
         audio_file.save(file_path)
         
         try:
-            # Recognize speech from file
-            success, text, error = recognize_speech_from_file(file_path, language)
+            # Recognize speech from file (with specified language)
+            success, text, detected_language, error = recognize_speech_from_file(file_path, language)
             
             if success:
                 return jsonify({
                     'text': text,
-                    'language': language,
+                    'language': detected_language,
                     'status': 'success'
                 }), 200
             else:
@@ -128,7 +131,7 @@ def speech_to_chat():
     
     Request:
         - Multipart form data with 'audio' file
-        - Optional: 'language' field (default: ar-SA)
+        - Optional: 'language' field (default: ar-MA)
         - Optional: 'conversation_id' field
     
     Returns:
@@ -165,7 +168,7 @@ def speech_to_chat():
             }), 400
         
         # Get parameters
-        language = request.form.get('language', 'ar-SA')
+        language = request.form.get('language', 'ar-MA')  # Defaults to Moroccan Arabic
         conversation_id = request.form.get('conversation_id')
         
         # Save file temporarily
@@ -174,8 +177,8 @@ def speech_to_chat():
         audio_file.save(file_path)
         
         try:
-            # Step 1: Recognize speech from file
-            success, transcribed_text, error = recognize_speech_from_file(file_path, language)
+            # Step 1: Recognize speech from file (auto-detects language if not specified)
+            success, transcribed_text, detected_language, error = recognize_speech_from_file(file_path, language)
             
             if not success:
                 return jsonify({
@@ -225,7 +228,7 @@ def speech_to_chat():
                 'response': response,
                 'conversation_id': conversation_id,
                 'is_new_conversation': is_new_conversation,
-                'language': language,
+                'language': detected_language,
                 'status': 'success'
             }), 200
             
