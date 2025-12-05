@@ -2,12 +2,15 @@
 Speech API endpoints for audio transcription.
 """
 import os
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 from werkzeug.utils import secure_filename
+from io import BytesIO
 from services.speech_service import (
     recognize_speech_from_file,
     recognize_speech_from_bytes,
-    get_supported_languages
+    get_supported_languages,
+    text_to_speech,
+    get_available_voices
 )
 from services.ai_service import initialize_agent, run_agent
 from data.mock_db import (
@@ -242,3 +245,81 @@ def speech_to_chat():
             'error': str(e),
             'error_ar': 'حدث خطأ في المعالجة'
         }), 500
+
+
+@speech_bp.route('/synthesize/speech', methods=['POST'])
+def text_to_speech_endpoint():
+    """
+    Convert text to speech audio using Azure Speech Service.
+    This endpoint is designed to read LLM responses in audio format.
+    
+    Request Body:
+        {
+            "text": "النص المراد تحويله إلى صوت",
+            "language": "ar-MA",  // optional, default: ar-MA
+            "voice": "ar-MA-JamalNeural"  // optional, uses default for language if not specified
+        }
+    
+    Returns:
+        Audio file (MP3) with the synthesized speech
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or 'text' not in data:
+            return jsonify({
+                'error': 'Missing required field: text',
+                'error_ar': 'الرجاء تقديم النص'
+            }), 400
+        
+        text = data['text']
+        language = data.get('language', 'ar-MA')
+        voice = data.get('voice')
+        
+        # Validate text is not empty
+        if not text.strip():
+            return jsonify({
+                'error': 'Text cannot be empty',
+                'error_ar': 'النص لا يمكن أن يكون فارغاً'
+            }), 400
+        
+        # Convert text to speech
+        success, audio_data, error = text_to_speech(text, language, voice)
+        
+        if not success:
+            return jsonify({
+                'error': error,
+                'error_ar': 'فشل تحويل النص إلى صوت'
+            }), 500
+        
+        # Create a BytesIO object from audio data
+        audio_stream = BytesIO(audio_data)
+        audio_stream.seek(0)
+        
+        # Return audio file
+        return send_file(
+            audio_stream,
+            mimetype='audio/mpeg',
+            as_attachment=False,
+            download_name='response.mp3'
+        )
+        
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'error_ar': 'حدث خطأ في المعالجة'
+        }), 500
+
+
+@speech_bp.route('/speech/voices', methods=['GET'])
+def get_voices():
+    """
+    Get available neural voices for text-to-speech.
+    
+    Returns:
+        JSON: Dictionary of language codes with available voices
+    """
+    return jsonify({
+        'voices': get_available_voices(),
+        'status': 'success'
+    }), 200
