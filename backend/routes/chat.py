@@ -68,11 +68,8 @@ def chat():
                 }), 404
             is_new_conversation = False
         
-        # Get conversation history
+        # Get conversation history (without current message)
         chat_history = get_conversation_history(conversation_id)
-        
-        # Store user message
-        add_message_to_conversation(conversation_id, 'user', user_message)
         
         # Get agent
         agent_instance = get_agent()
@@ -85,7 +82,8 @@ def chat():
         # Run agent with conversation history
         response = run_agent(agent_instance, user_message, chat_history)
         
-        # Store assistant response
+        # Store user message and assistant response AFTER agent processing
+        add_message_to_conversation(conversation_id, 'user', user_message)
         add_message_to_conversation(conversation_id, 'assistant', response)
         
         return jsonify({
