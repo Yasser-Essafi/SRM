@@ -14,11 +14,15 @@ from data.mock_db import get_user_by_cil, get_zone_by_id
 
 # Tool Functions (without decorator for direct calling)
 def _check_payment_impl(cil: str) -> str:
-    """Implementation of payment check."""
+    """Implementation of payment check - Returns multilingual data."""
     user = get_user_by_cil(cil)
     
     if not user:
-        return f"لم يتم العثور على عميل برقم CIL: {cil}. الرجاء التحقق من الرقم."
+        return f"""
+[CUSTOMER_NOT_FOUND]
+CIL: {cil}
+Message: Customer not found with this CIL number. Please verify the number.
+"""
     
     name = user['name']
     payment_status = user['payment_status']
@@ -27,46 +31,56 @@ def _check_payment_impl(cil: str) -> str:
     service_status = user['service_status']
     service_type = user['service_type']
     
+    # Determine service emoji
+    service_emoji = "💧⚡" if service_type == "ماء وكهرباء" else ("💧" if service_type == "ماء" else "⚡")
+    
     if payment_status == 'مدفوع':
         return f"""
-معلومات العميل {name}:
-- نوع الخدمة: {service_type}
-- حالة الدفع: ✅ {payment_status}
-- آخر دفعة: {last_payment}
-- الرصيد المستحق: {outstanding_balance} درهم
-- حالة الخدمة: {service_status}
+[PAYMENT_STATUS: PAID]
+Customer: {name}
+Service Type: {service_emoji} {service_type}
+Payment Status: ✅ {payment_status} (Paid)
+Last Payment: {last_payment}
+Outstanding Balance: {outstanding_balance} MAD
+Service Status: {service_status}
 
-الدفعات محدثة. إذا كانت الخدمة مقطوعة، قد يكون السبب صيانة في المنطقة.
+Note: Payment is up to date. If service is interrupted, it may be due to maintenance in the area.
+Important: Match service type ({service_type}) with customer's reported problem.
 """
     else:
         return f"""
-معلومات العميل {name}:
-- نوع الخدمة: {service_type}
-- حالة الدفع: ⚠️ {payment_status}
-- آخر دفعة: {last_payment}
-- الرصيد المستحق: {outstanding_balance} درهم
-- حالة الخدمة: {service_status}
+[PAYMENT_STATUS: UNPAID]
+Customer: {name}
+Service Type: {service_emoji} {service_type}
+Payment Status: ⚠️ {payment_status} (Unpaid)
+Last Payment: {last_payment}
+Outstanding Balance: {outstanding_balance} MAD
+Service Status: {service_status}
 
-يوجد رصيد مستحق بقيمة {outstanding_balance} درهم. الرجاء سداد المبلغ لاستعادة الخدمة.
-يمكنك الدفع عبر:
-1. التطبيق المحمول لـ SRM
-2. وكالات الأداء (وفا كاش، كاش بلس)
-3. البنك
+Reason: Outstanding balance of {outstanding_balance} MAD. Payment required to restore {service_type} service.
+
+Payment Methods:
+1. SRM Mobile App
+2. Payment agencies (Wafacash, Cash Plus)
+3. Bank
+
+Note: Currently interrupted service: {service_type}
 """
 
 
 def _check_maintenance_impl(cil: str) -> str:
-    """Implementation of maintenance check."""
+    """Implementation of maintenance check - Returns multilingual data."""
     user = get_user_by_cil(cil)
     
     if not user:
-        return f"لم يتم العثور على عميل برقم CIL: {cil}"
+        return f"[ERROR] Customer not found with CIL: {cil}"
     
     zone_id = user['zone_id']
     zone = get_zone_by_id(zone_id)
+    service_type = user['service_type']
     
     if not zone:
-        return "لا توجد معلومات عن المنطقة."
+        return "[ERROR] No zone information available."
     
     zone_name = zone['zone_name']
     maintenance_status = zone['maintenance_status']
@@ -76,52 +90,70 @@ def _check_maintenance_impl(cil: str) -> str:
         estimated_restoration = zone['estimated_restoration']
         affected_services = zone['affected_services']
         
+        # Determine service emoji for affected services
+        service_emoji = "💧" if affected_services == "ماء" else ("⚡" if affected_services == "كهرباء" else "💧⚡")
+        
         return f"""
-📍 منطقتك: {zone_name}
-⚙️ حالة الصيانة: {maintenance_status}
+[MAINTENANCE_IN_PROGRESS]
+📍 Zone: {zone_name}
+⚙️ Maintenance Status: {maintenance_status} (In Progress)
 
-سبب الانقطاع: {outage_reason}
-الخدمات المتأثرة: {affected_services}
-الوقت المتوقع للإصلاح: {estimated_restoration}
+{service_emoji} Affected Service: {affected_services}
+Outage Reason: {outage_reason}
+Estimated Restoration: {estimated_restoration}
 
-نعتذر عن الإزعاج. فرقنا تعمل على حل المشكلة في أقرب وقت ممكن.
+Customer Subscription Type: {service_type}
+
+IMPORTANT NOTE:
+- If customer's problem is about "{affected_services}", this is the reason (area maintenance).
+- If customer's problem is about a different service (not "{affected_services}"), there is NO maintenance affecting it currently.
+
+Apologies for the inconvenience. Our teams are working to resolve the issue as soon as possible.
 """
     else:
         return f"""
-📍 منطقتك: {zone_name}
-✅ حالة الصيانة: {maintenance_status}
+[NO_MAINTENANCE]
+📍 Zone: {zone_name}
+✅ Maintenance Status: {maintenance_status} (No maintenance)
 
-لا توجد أعمال صيانة مجدولة في منطقتك حالياً.
+Customer Subscription Type: {service_type}
+
+There are no scheduled maintenance works in your area currently.
+If there is a service issue, it may be related to payment or a local problem with the meter/connections.
 """
 
 
 # Create tool wrappers with decorator
 @tool
 def check_payment(cil: str) -> str:
-    """يستخدم للتحقق من حالة الدفع والرصيد المستحق للعميل. يتطلب رقم CIL (مثال: 1071324-101).
+    """Check payment status and outstanding balance for a customer by CIL number.
+    Use this to verify if customer has unpaid bills or payment is up to date.
     
-    Check payment status and outstanding balance for a customer by CIL number.
+    Vérifier l'état du paiement et le solde impayé d'un client par numéro CIL.
+    التحقق من حالة الدفع والرصيد المستحق للعميل برقم CIL.
     
     Args:
         cil: Customer Identification Number (format: 1071324-101)
         
     Returns:
-        str: Payment status information in Arabic
+        str: Payment status information that you must translate to customer's language
     """
     return _check_payment_impl(cil)
 
 
 @tool
 def check_maintenance(cil: str) -> str:
-    """يستخدم للتحقق من أعمال الصيانة والانقطاعات في منطقة العميل. يتطلب رقم CIL.
+    """Check for maintenance and outages in customer's zone. Requires CIL number.
+    Use this to verify if there are scheduled maintenance works affecting services.
     
-    Check for maintenance and outages in customer's zone. Requires CIL number.
+    Vérifier les travaux de maintenance et les coupures dans la zone du client.
+    التحقق من أعمال الصيانة والانقطاعات في منطقة العميل.
     
     Args:
         cil: Customer Identification Number (format: 1071324-101)
         
     Returns:
-        str: Maintenance information in Arabic
+        str: Maintenance information that you must translate to customer's language
     """
     return _check_maintenance_impl(cil)
 
@@ -130,26 +162,48 @@ def check_maintenance(cil: str) -> str:
 tools = [check_payment, check_maintenance]
 
 
-# Arabic System Prompt
-SYSTEM_PROMPT = """أنت مساعد خدمة العملاء لشركة SRM (إدارة المياه والكهرباء).
+# Multilingual System Prompt
+SYSTEM_PROMPT = """You are a customer service assistant for SRM (Water and Electricity Management Company).
 
-دورك:
-1. التحدث باللغة العربية الفصحى بشكل احترافي ومهذب
-2. مساعدة المواطنين في فهم سبب انقطاع الماء أو الكهرباء
-3. طلب رقم CIL (رقم العميل بصيغة: 1071324-101) إذا لم يتم تقديمه
-4. التحقق من حالة الدفع أولاً
-5. إذا كان الدفع منتظم، التحقق من الصيانة في المنطقة
-6. تقديم معلومات واضحة ومفيدة
+Your role:
+1. **CRITICAL: Detect and respond in the SAME language as the customer**
+   - If customer writes in Moroccan Darija → respond in Modern Standard Arabic
+   - If customer writes in Arabic (فصحى) → respond in Modern Standard Arabic
+   - If customer writes in French → respond in French
+   - If customer writes in English → respond in English
+   - If customer writes in Spanish → respond in Spanish
+   
+2. Help citizens understand why water or electricity service is interrupted
+3. Request CIL number (Customer ID format: 1071324-101) if not provided
+4. **Identify the problem type**: Automatically detect if the issue is about water or electricity
+5. Check payment status first using CIL number
+6. **Link the problem to the appropriate service**:
+   - If customer mentions water problem, check "service_type" and "affected_services" in data
+   - If service_type = "ماء" (water) or "ماء وكهرباء" (water & electricity), use water data
+   - If affected_services = "ماء", inform customer that maintenance affects water
+   - If customer mentions electricity problem, check "service_type" and "affected_services"
+   - If service_type = "كهرباء" (electricity) or "ماء وكهرباء", use electricity data
+   - If affected_services = "كهرباء", inform customer that maintenance affects electricity
+7. If payment is up-to-date, check for maintenance in the area
+8. Provide clear, helpful information related to the specific service type
 
-قواعد مهمة:
-- استخدم اللغة العربية فقط في جميع الردود
-- كن مهذباً ومحترماً
-- قدم حلول عملية
-- إذا كان السبب عدم الدفع، وجه العميل لطرق الدفع
-- إذا كان السبب الصيانة، قدم الوقت المتوقع للإصلاح
-- لا تخترع معلومات - استخدم الأدوات المتاحة فقط
+Important rules:
+- **ALWAYS respond in the SAME language the customer is using**
+- Be polite and professional
+- **Identify the problem type (water/electricity) from customer's message**
+- Link the problem to retrieved database data (service_type, affected_services)
+- Provide practical solutions related to the specific service type
+- If the issue is non-payment, direct customer to payment methods
+- If the issue is maintenance, provide estimated repair time and confirm affected service type
+- Do not invent information - only use available tools
 
-ابدأ بالترحيب بالعميل وسؤاله عن مشكلته."""
+Language-specific greetings:
+- Arabic: "مرحباً بك في خدمة عملاء SRM. كيف يمكنني مساعدتك اليوم؟"
+- French: "Bienvenue au service client SRM. Comment puis-je vous aider aujourd'hui ?"
+- English: "Welcome to SRM customer service. How can I help you today?"
+- Spanish: "Bienvenido al servicio al cliente de SRM. ¿Cómo puedo ayudarle hoy?"
+
+Start by greeting the customer in their language and asking about their issue."""
 
 
 def initialize_agent() -> Optional[AzureChatOpenAI]:
