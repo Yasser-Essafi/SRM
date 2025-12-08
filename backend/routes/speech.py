@@ -251,14 +251,18 @@ def speech_to_chat():
 def text_to_speech_endpoint():
     """
     Convert text to speech audio using Azure Speech Service.
-    This endpoint is designed to read LLM responses in audio format.
+    Automatically detects language and selects appropriate voice:
+    - French text → fr-FR-DeniseNeural
+    - Arabic text → ar-MA-JamalNeural
     
     Request Body:
         {
-            "text": "النص المراد تحويله إلى صوت",
-            "language": "ar-MA",  // optional, default: ar-MA
-            "voice": "ar-MA-JamalNeural"  // optional, uses default for language if not specified
+            "text": "النص المراد تحويله إلى صوت"
         }
+    
+    Optional fields:
+        - "language": "ar-MA" or "fr-FR" (overrides auto-detection)
+        - "voice": specific voice name (overrides auto-selection)
     
     Returns:
         Audio file (MP3) with the synthesized speech
@@ -273,8 +277,30 @@ def text_to_speech_endpoint():
             }), 400
         
         text = data['text']
-        language = data.get('language', 'ar-MA')
-        voice = data.get('voice')
+        language = data.get('language')  # Optional
+        voice = data.get('voice')  # Optional
+        
+        # Ensure empty strings are treated as None
+        if language == '' or language is None:
+            language = None
+        if voice == '' or voice is None:
+            voice = None
+        
+        # AUTO-DETECT language if not provided
+        if not language:
+            import re
+            arabic_chars = len(re.findall(r'[\u0600-\u06FF]', text))
+            if arabic_chars > 0:
+                language = "ar-MA"
+            else:
+                language = "fr-FR"
+        
+        # AUTO-SELECT voice if not provided
+        if not voice:
+            if language == "ar-MA":
+                voice = "ar-MA-JamalNeural"
+            else:
+                voice = "fr-FR-DeniseNeural"
         
         # Validate text is not empty
         if not text.strip():
