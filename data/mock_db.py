@@ -10,7 +10,7 @@ import uuid
 
 # Users Table - Contains customer information
 users_table = pd.DataFrame({
-    'cil': ['1071324-101', '1300994-101', '3095678-303', '4017890-404', '5029012-505'],
+    'contract': ['3701455886 / 1014871', '3701455887 / 1014872', '3701455888 / 1014873', '3701455889 / 1014874', '3701455890 / 1014875'],
     'name': ['Abdenbi EL MARZOUKI', 'Ahmed Sabil', 'محمد الإدريسي', 'خديجة العلوي', 'يوسف السباعي'],
     'address': ['967, Lot. Sala Al Jadida Zone (1), Sala Al Jadida', '2 Rue BATTIT I Ghizlaine Imm 2 apt 03', 'شارع محمد الخامس، فاس', 'حي النخيل، مراكش', 'شارع الزرقطوني، طنجة'],
     'phone': ['0612345678', '0698765432', '0611223344', '0655667788', '0699887766'],
@@ -35,17 +35,17 @@ zones_table = pd.DataFrame({
 })
 
 
-def get_user_by_cil(cil: str) -> Optional[dict]:
+def get_user_by_contract(contract: str) -> Optional[dict]:
     """
-    Retrieve user information by CIL (Customer Identification Number).
+    Retrieve user information by Contract Number (N°Contrat).
     
     Args:
-        cil: Customer Identification Number
+        contract: Contract Number
         
     Returns:
         dict: User information or None if not found
     """
-    user = users_table[users_table['cil'] == cil]
+    user = users_table[users_table['contract'] == contract]
     
     if user.empty:
         return None

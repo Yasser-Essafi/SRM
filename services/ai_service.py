@@ -9,19 +9,19 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnablePassthrough
 from config.settings import settings
-from data.mock_db import get_user_by_cil, get_zone_by_id
+from data.mock_db import get_user_by_contract, get_zone_by_id
 
 
 # Tool Functions (without decorator for direct calling)
-def _check_payment_impl(cil: str) -> str:
+def _check_payment_impl(contract: str) -> str:
     """Implementation of payment check - Returns multilingual data."""
-    user = get_user_by_cil(cil)
+    user = get_user_by_contract(contract)
     
     if not user:
         return f"""
 [CUSTOMER_NOT_FOUND]
-CIL: {cil}
-Message: Customer not found with this CIL number. Please verify the number.
+Contract: {contract}
+Message: Customer not found with this contract number. Please verify the number.
 """
     
     name = user['name']
@@ -68,12 +68,12 @@ Note: Currently interrupted service: {service_type}
 """
 
 
-def _check_maintenance_impl(cil: str) -> str:
+def _check_maintenance_impl(contract: str) -> str:
     """Implementation of maintenance check - Returns multilingual data."""
-    user = get_user_by_cil(cil)
+    user = get_user_by_contract(contract)
     
     if not user:
-        return f"[ERROR] Customer not found with CIL: {cil}"
+        return f"[ERROR] Customer not found with contract: {contract}"
     
     zone_id = user['zone_id']
     zone = get_zone_by_id(zone_id)
@@ -125,37 +125,37 @@ If there is a service issue, it may be related to payment or a local problem wit
 
 # Create tool wrappers with decorator
 @tool
-def check_payment(cil: str) -> str:
-    """Check payment status and outstanding balance for a customer by CIL number.
+def check_payment(contract: str) -> str:
+    """Check payment status and outstanding balance for a customer by contract number.
     Use this to verify if customer has unpaid bills or payment is up to date.
     
-    Vérifier l'état du paiement et le solde impayé d'un client par numéro CIL.
-    التحقق من حالة الدفع والرصيد المستحق للعميل برقم CIL.
+    Vérifier l'état du paiement et le solde impayé d'un client par numéro de contrat.
+    التحقق من حالة الدفع والرصيد المستحق للعميل برقم العقد.
     
     Args:
-        cil: Customer Identification Number (format: 1071324-101)
+        contract: Contract Number (format: 3701455886 / 1014871)
         
     Returns:
         str: Payment status information that you must translate to customer's language
     """
-    return _check_payment_impl(cil)
+    return _check_payment_impl(contract)
 
 
 @tool
-def check_maintenance(cil: str) -> str:
-    """Check for maintenance and outages in customer's zone. Requires CIL number.
+def check_maintenance(contract: str) -> str:
+    """Check for maintenance and outages in customer's zone. Requires contract number.
     Use this to verify if there are scheduled maintenance works affecting services.
     
     Vérifier les travaux de maintenance et les coupures dans la zone du client.
     التحقق من أعمال الصيانة والانقطاعات في منطقة العميل.
     
     Args:
-        cil: Customer Identification Number (format: 1071324-101)
+        contract: Contract Number (format: 3701455886 / 1014871)
         
     Returns:
         str: Maintenance information that you must translate to customer's language
     """
-    return _check_maintenance_impl(cil)
+    return _check_maintenance_impl(contract)
 
 
 # Collect tools
@@ -174,9 +174,9 @@ Your role:
    - If customer writes in Spanish → respond in Spanish
    
 2. Help citizens understand why water or electricity service is interrupted
-3. Request CIL number (Customer ID format: 1071324-101) if not provided
+3. Request Contract Number (N°Contrat format: 3701455886 / 1014871) if not provided
 4. **Identify the problem type**: Automatically detect if the issue is about water or electricity
-5. Check payment status first using CIL number
+5. Check payment status first using contract number
 6. **Link the problem to the appropriate service**:
    - If customer mentions water problem, check "service_type" and "affected_services" in data
    - If service_type = "ماء" (water) or "ماء وكهرباء" (water & electricity), use water data

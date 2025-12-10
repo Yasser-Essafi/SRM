@@ -7,17 +7,17 @@ import re
 from config.settings import settings
 
 
-def extract_cil_from_image(image_bytes: bytes) -> Optional[str]:
+def extract_contract_from_image(image_bytes: bytes) -> Optional[str]:
     """
-    Extract CIL from an image using Azure Document Intelligence.
+    Extract N°Contrat from an image using Azure Document Intelligence.
     
-    CIL Format: 1071324-101 (7 digits - 3 digits) or 7-10 digits
+    N°Contrat Format: 3701455886 / 1014871 (10 digits / 7 digits)
     
     Args:
         image_bytes: Image file bytes
         
     Returns:
-        str: Extracted CIL number or None if extraction fails
+        str: Extracted contract number or None if extraction fails
     """
     try:
         from azure.ai.documentintelligence import DocumentIntelligenceClient
@@ -52,29 +52,24 @@ def extract_cil_from_image(image_bytes: bytes) -> Optional[str]:
         if result.content:
             extracted_text = result.content
         
-        # Pattern matching for CIL
-        # Primary format: 1071324-101 (7 digits - 3 digits)
-        # Also match reversed: 101-1071324 (3 digits - 7 digits) and auto-correct it
-        cil_patterns = [
-            r'(?:CIL|N°\s*Client|رقم\s*العميل|Client\s*ID)\s*:?\s*(\d{3,7}-\d{3,7})',  # Any dash format
-            r'\b(\d{3,7}-\d{3,7})\b',  # Standalone with dash
-            r'(?:CIL|N°\s*Client|رقم\s*العميل|Client\s*ID)\s*:?\s*(\d{7,10})',  # 7-10 digits no dash
-            r'\b(\d{8,10})\b'  # Fallback: 8-10 digit number
+        # Pattern matching for N°Contrat
+        # Primary format: 3701455886 / 1014871 (10 digits / 7 digits)
+        contract_patterns = [
+            r'(?:N°\s*Contrat|N°\s*Contract|رقم\s*العقد|Contract\s*Number)\s*:?\s*(\d{10})\s*/\s*(\d{7})',  # Full format with /
+            r'\b(\d{10})\s*/\s*(\d{7})\b',  # Standalone format: 3701455886 / 1014871
+            r'(?:N°\s*Contrat|N°\s*Contract|رقم\s*العقد)\s*:?\s*(\d{10})',  # Only first part
         ]
         
-        for pattern in cil_patterns:
+        for pattern in contract_patterns:
             matches = re.findall(pattern, extracted_text, re.IGNORECASE)
             if matches:
-                cil = matches[0]
-                # Fix reversed CIL: if format is 3digits-7digits, reverse it to 7digits-3digits
-                if '-' in cil:
-                    parts = cil.split('-')
-                    if len(parts) == 2:
-                        # If first part is 3 digits and second is 7, it's reversed
-                        if len(parts[0]) == 3 and len(parts[1]) == 7:
-                            cil = f"{parts[1]}-{parts[0]}"  # Reverse: 101-1071324 → 1071324-101
-                        # Already correct format (7-3), keep as is
-                return cil
+                if isinstance(matches[0], tuple) and len(matches[0]) == 2:
+                    # Full format: combine both parts
+                    contract = f"{matches[0][0]} / {matches[0][1]}"
+                else:
+                    # Only first part found
+                    contract = matches[0]
+                return contract
         
         # If no pattern matched, return None
         return None
@@ -134,7 +129,7 @@ def extract_bill_information(image_bytes: bytes) -> Dict[str, Any]:
     Extract comprehensive information from utility bill image.
     
     This function extracts:
-    - CIL (Customer Identification Number)
+    - N°Contrat (Contract Number)
     - Customer Name
     - Amount Due
     - Due Date
@@ -148,7 +143,7 @@ def extract_bill_information(image_bytes: bytes) -> Dict[str, Any]:
         
     Returns:
         dict: Extracted information with keys:
-            - cil: Customer ID (format: 1071324-101)
+            - contract: Contract Number (format: 3701455886 / 1014871)
             - name: Customer name
             - amount_due: Amount to pay
             - due_date: Payment due date
@@ -191,7 +186,7 @@ def extract_bill_information(image_bytes: bytes) -> Dict[str, Any]:
         
         # Initialize result dictionary
         extracted_info = {
-            "cil": None,
+            "contract": None,
             "name": None,
             "amount_due": None,
             "due_date": None,
@@ -202,29 +197,24 @@ def extract_bill_information(image_bytes: bytes) -> Dict[str, Any]:
             "raw_text": text
         }
         
-        # Extract CIL (Format: 1071324-101 or 7-10 digits with optional dash)
-        # Common patterns: "CIL: 1071324-101", "N° Client: 1071324-101", "رقم العميل: 1071324-101"
-        cil_patterns = [
-            r'(?:CIL|N°\s*Client|رقم\s*العميل|Client\s*ID|Identifiant)\s*:?\s*(\d{7}-\d{3})',  # Format: 1071324-101
-            r'(?:CIL|N°\s*Client|رقم\s*العميل|Client\s*ID|Identifiant)\s*:?\s*(\d{3}-\d{7})',  # Reversed: 101-1071324
-            r'(?:CIL|N°\s*Client|رقم\s*العميل|Client\s*ID|Identifiant)\s*:?\s*(\d{7,10})',  # 7-10 digits
-            r'\b(\d{7}-\d{3})\b',  # Standalone format: 1071324-101
-            r'\b(\d{3}-\d{7})\b',  # Standalone reversed: 101-1071324
-            r'\b(\d{8,10})\b'  # Fallback: 8-10 digit number
+        # Extract N°Contrat (Format: 3701455886 / 1014871)
+        # Common patterns: "N° Contrat: 3701455886 / 1014871", "رقم العقد: 3701455886 / 1014871"
+        contract_patterns = [
+            r'(?:N°\s*Contrat|N°\s*Contract|رقم\s*العقد|Contract\s*Number)\s*:?\s*(\d{10})\s*/\s*(\d{7})',  # Full format
+            r'\b(\d{10})\s*/\s*(\d{7})\b',  # Standalone format: 3701455886 / 1014871
+            r'(?:N°\s*Contrat|N°\s*Contract|رقم\s*العقد)\s*:?\s*(\d{10})',  # Only first part
         ]
         
-        for pattern in cil_patterns:
+        for pattern in contract_patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                cil = match.group(1)
-                # Fix reversed CIL: if format is 3digits-7digits, reverse it to 7digits-3digits
-                if '-' in cil:
-                    parts = cil.split('-')
-                    if len(parts) == 2:
-                        # If first part is 3 digits and second is 7, it's reversed
-                        if len(parts[0]) == 3 and len(parts[1]) == 7:
-                            cil = f"{parts[1]}-{parts[0]}"  # Reverse to correct format
-                extracted_info["cil"] = cil
+                if len(match.groups()) >= 2 and match.group(2):
+                    # Full format: combine both parts
+                    contract = f"{match.group(1)} / {match.group(2)}"
+                else:
+                    # Only first part found
+                    contract = match.group(1)
+                extracted_info["contract"] = contract
                 break
         
         # Extract Customer Name
@@ -343,8 +333,8 @@ def format_extracted_info_arabic(info: Dict[str, Any]) -> str:
     
     lines = ["📄 **المعلومات المستخرجة من الفاتورة:**\n"]
     
-    if info.get("cil"):
-        lines.append(f"🔢 رقم CIL: **{info['cil']}**")
+    if info.get("contract"):
+        lines.append(f"🔢 رقم العقد: **{info['contract']}**")
     
     if info.get("name"):
         lines.append(f"👤 الاسم: {info['name']}")

@@ -4,7 +4,7 @@ Handles chat display, message history, and user interactions.
 """
 import streamlit as st
 from typing import Optional
-from services.ocr_service import extract_cil_from_image, extract_bill_information, format_extracted_info_arabic
+from services.ocr_service import extract_contract_from_image, extract_bill_information, format_extracted_info_arabic
 from services.ai_service import run_agent
 
 
@@ -21,7 +21,7 @@ def render_chat_interface(agent_executor):
         # Add welcome message
         st.session_state.messages.append({
             "role": "assistant",
-            "content": "مرحباً بك في خدمة عملاء SRM! 👋\n\nأنا هنا لمساعدتك في فهم سبب انقطاع الماء أو الكهرباء.\n\nالرجاء تقديم رقم CIL الخاص بك (مثال: 1071324-101) أو رفع صورة الفاتورة."
+            "content": "مرحباً بك في خدمة عملاء SRM! 👋\n\nأنا هنا لمساعدتك في فهم سبب انقطاع الماء أو الكهرباء.\n\nالرجاء تقديم رقم العقد الخاص بك (مثال: 3701455886 / 1014871) أو رفع صورة الفاتورة."
         })
     
     # Image upload section
@@ -33,7 +33,7 @@ def render_chat_interface(agent_executor):
         uploaded_file = st.file_uploader(
             "اختر صورة الفاتورة لاستخراج المعلومات تلقائياً",
             type=["png", "jpg", "jpeg", "pdf"],
-            help="قم برفع صورة واضحة للفاتورة تحتوي على رقم CIL والمعلومات الأخرى"
+            help="قم برفع صورة واضحة للفاتورة تحتوي على رقم العقد والمعلومات الأخرى"
         )
     
     with col2:
@@ -45,7 +45,7 @@ def render_chat_interface(agent_executor):
             st.image(uploaded_file, caption="الصورة المرفوعة", use_container_width=True)
         
         # Extract information button
-        button_label = "🔍 استخراج المعلومات من الفاتورة" if extract_full else "🔍 استخراج رقم CIL فقط"
+        button_label = "🔍 استخراج المعلومات من الفاتورة" if extract_full else "🔍 استخراج رقم العقد فقط"
         
         if st.button(button_label):
             with st.spinner("جاري معالجة الصورة..."):
@@ -63,9 +63,9 @@ def render_chat_interface(agent_executor):
                         st.success("✅ تم استخراج المعلومات بنجاح!")
                         st.markdown(formatted_info)
                         
-                        # If CIL found, add to chat
-                        if bill_info.get("cil"):
-                            user_message = f"رقم CIL الخاص بي هو: {bill_info['cil']}"
+                        # If contract found, add to chat
+                        if bill_info.get("contract"):
+                            user_message = f"رقم العقد الخاص بي هو: {bill_info['contract']}"
                             st.session_state.messages.append({
                                 "role": "user",
                                 "content": user_message
@@ -84,15 +84,15 @@ def render_chat_interface(agent_executor):
                                 })
                             st.rerun()
                         else:
-                            st.warning("⚠️ لم يتم العثور على رقم CIL. يمكنك إدخاله يدوياً.")
+                            st.warning("⚠️ لم يتم العثور على رقم العقد. يمكنك إدخاله يدوياً.")
                 else:
-                    # Extract only CIL
-                    extracted_cil = extract_cil_from_image(image_bytes)
+                    # Extract only Contract
+                    extracted_contract = extract_contract_from_image(image_bytes)
                     
-                    if extracted_cil:
-                        st.success(f"✅ تم استخراج رقم CIL: {extracted_cil}")
-                        # Add extracted CIL to chat
-                        user_message = f"رقم CIL الخاص بي هو: {extracted_cil}"
+                    if extracted_contract:
+                        st.success(f"✅ تم استخراج رقم العقد: {extracted_contract}")
+                        # Add extracted contract to chat
+                        user_message = f"رقم العقد الخاص بي هو: {extracted_contract}"
                         st.session_state.messages.append({
                             "role": "user",
                             "content": user_message
@@ -111,7 +111,7 @@ def render_chat_interface(agent_executor):
                             })
                         st.rerun()
                     else:
-                        st.error("❌ لم يتم العثور على رقم CIL في الصورة. الرجاء إدخاله يدوياً.")
+                        st.error("❌ لم يتم العثور على رقم العقد في الصورة. الرجاء إدخاله يدوياً.")
     
     st.markdown("---")
     st.markdown("### 💬 المحادثة")
