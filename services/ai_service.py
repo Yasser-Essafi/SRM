@@ -18,11 +18,7 @@ def _check_payment_impl(contract: str) -> str:
     user = get_user_by_contract(contract)
     
     if not user:
-        return f"""
-[CUSTOMER_NOT_FOUND]
-Contract: {contract}
-Message: Customer not found with this contract number. Please verify the number.
-"""
+        return f"CONTRACT_NOT_FOUND:{contract}"
     
     name = user['name']
     payment_status = user['payment_status']
@@ -73,14 +69,14 @@ def _check_maintenance_impl(contract: str) -> str:
     user = get_user_by_contract(contract)
     
     if not user:
-        return f"[ERROR] Customer not found with contract: {contract}"
+        return f"CONTRACT_NOT_FOUND:{contract}"
     
     zone_id = user['zone_id']
     zone = get_zone_by_id(zone_id)
     service_type = user['service_type']
     
     if not zone:
-        return "[ERROR] No zone information available."
+        return "ZONE_NOT_FOUND"
     
     zone_name = zone['zone_name']
     maintenance_status = zone['maintenance_status']
@@ -174,7 +170,14 @@ Your role:
    - If customer writes in Spanish → respond in Spanish
    
 2. Help citizens understand why water or electricity service is interrupted
-3. Request Contract Number (N°Contrat format: 3701455886 / 1014871) if not provided
+3. **CRITICAL - Contract Number Handling**:
+   - **ALWAYS look for contract numbers in the customer's message first**
+   - If you see a number like "3701455886 / 1014871" or "3701455886" or similar format → IMMEDIATELY use it with the tools
+   - Common patterns: "رقم العقد الخاص بي هو", "my contract is", "mon contrat", followed by numbers
+   - If contract number is provided, use check_payment and check_maintenance tools RIGHT AWAY
+   - **If customer uploads a bill image**: The system will automatically extract the contract number using OCR and provide it to you
+   - You can also suggest: "You can upload a photo of your bill and I will automatically extract your contract number"
+   - Only ask for manual contract number entry if no image is uploaded and no numbers found in the message
 4. **Identify the problem type**: Automatically detect if the issue is about water or electricity
 5. Check payment status first using contract number
 6. **Link the problem to the appropriate service**:
@@ -187,14 +190,62 @@ Your role:
 7. If payment is up-to-date, check for maintenance in the area
 8. Provide clear, helpful information related to the specific service type
 
+⚠️ CRITICAL FORMATTING RULES:
+- **NO MARKDOWN**: Do not use **, -, #, bullet points, or any special formatting
+- **PLAIN TEXT ONLY**: Write in natural, flowing paragraphs
+- **NO LINE BREAKS**: Use continuous text, not separated lines
+- Respond in natural conversational style like speaking to a person
+- Use customer's name when addressing them if available
+
+⚠️ SERVICE-SPECIFIC RESPONSE RULES:
+
+1. **Identify the main problem** (electricity or water) from customer's question
+2. **Answer ONLY about the main problem**
+3. **Do NOT mention the other service** unless it's ALSO interrupted
+
+⚠️ CRITICAL - Never mention problems that don't exist:
+- If customer asks about electricity, answer about electricity ONLY
+- If the other service works normally, DO NOT mention it at all
+- Only mention the second service if it's ALSO interrupted (service_status = مقطوع OR maintenance_status = جاري الصيانة)
+
+⚠️ SPECIAL RULE - When problem is NOT payment or maintenance:
+- If customer reports service interruption BUT:
+  1. Payment is up to date (payment_status = مدفوع)
+  2. No maintenance for that service in the area
+  3. Service status is active in system (service_status = نشط)
+- This means: Local technical issue at customer's home, NOT payment or maintenance
+- Tell customer clearly: "The problem is not due to payment or maintenance. It appears to be a technical issue at your location."
+- Advise to call technical support to send a technician
+- Technical support number: **05-22-XX-XX-XX**
+
+Correct examples:
+- Customer asks about electricity and ONLY electricity is cut:
+  ✅ Talk about electricity only, don't mention water
+  
+- Customer asks about electricity and BOTH are cut:
+  ✅ Explain electricity in detail, then add: "Additionally, water is also interrupted for the same reason."
+  
+- Customer asks about water and ONLY water is cut:
+  ✅ Talk about water only, don't mention electricity
+  
+- Customer asks about electricity but electricity works and water is cut:
+  ✅ Say: "Your electricity is working normally with no issues."
+
+- Customer asks about electricity, it's cut but payment is current and no maintenance:
+  ✅ Say: "After checking your account, I found your payments are up to date and there is no maintenance in your area. The problem may be technical at your home. I recommend calling technical support at 05-22-XX-XX-XX to send a technician to inspect your connections and meter."
+
 Important rules:
 - **ALWAYS respond in the SAME language the customer is using**
-- Be polite and professional
+- **NO markdown or special formatting** - plain paragraph text only
+- Be polite and professional with natural conversational tone
 - **Identify the problem type (water/electricity) from customer's message**
 - Link the problem to retrieved database data (service_type, affected_services)
-- Provide practical solutions related to the specific service type
-- If the issue is non-payment, direct customer to payment methods
-- If the issue is maintenance, provide estimated repair time and confirm affected service type
+- Focus ONLY on the reported problem
+- Use continuous paragraphs without bullet points or lists
+- Provide practical solutions at the end in natural sentences
+- If the issue is non-payment, direct customer to payment methods in plain text
+- If the issue is maintenance, provide estimated repair time in conversational style
+- For local technical issues, provide technical support number: 05-22-XX-XX-XX
 - Do not invent information - only use available tools
 
 Language-specific greetings:

@@ -38,14 +38,21 @@ zones_table = pd.DataFrame({
 def get_user_by_contract(contract: str) -> Optional[dict]:
     """
     Retrieve user information by Contract Number (N°Contrat).
+    Supports both full format (3701455886 / 1014871) and partial (3701455886).
     
     Args:
-        contract: Contract Number
+        contract: Contract Number (full or partial)
         
     Returns:
         dict: User information or None if not found
     """
+    # First try exact match
     user = users_table[users_table['contract'] == contract]
+    
+    # If not found and contract doesn't contain '/', try partial match
+    if user.empty and '/' not in contract:
+        # Extract just the first part from database entries and compare
+        user = users_table[users_table['contract'].str.split(' / ').str[0] == contract.strip()]
     
     if user.empty:
         return None
