@@ -33,8 +33,9 @@ def chat():
     
     Request Body:
         {
-            "message": "رقم CIL الخاص بي هو: 1071324-101",
-            "conversation_id": "optional-uuid-string"
+            "message": "رقم العقد الخاص بي هو: 3701455886 / 1014871",
+            "conversation_id": "optional-uuid-string",
+            "language": "ar" // optional: "ar" (Arabic), "en" (English), "fr" (French)
         }
     
     Returns:
@@ -55,6 +56,7 @@ def chat():
         
         user_message = data['message']
         conversation_id = data.get('conversation_id')
+        language = data.get('language', 'ar')  # Default to Arabic
         
         # Create new conversation if no ID provided
         if not conversation_id:
@@ -81,8 +83,8 @@ def chat():
                 'error_ar': 'فشل تهيئة النظام'
             }), 500
         
-        # Run agent with conversation history
-        response = run_agent(agent_instance, user_message, chat_history)
+        # Run agent with conversation history and language preference
+        response = run_agent(agent_instance, user_message, chat_history, language)
         
         # Store user message and assistant response AFTER agent processing
         add_message_to_conversation(conversation_id, 'user', user_message)
