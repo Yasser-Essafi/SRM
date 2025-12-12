@@ -1,23 +1,25 @@
 """
 OCR Service using Azure Document Intelligence.
-Extracts CIL and other information from utility bills.
+Extracts water and electricity contract numbers from utility bills.
 """
 from typing import Optional, Dict, Any
 import re
 from config.settings import settings
 
 
-def extract_contract_from_image(image_bytes: bytes) -> Optional[str]:
+def extract_contract_from_image(image_bytes: bytes) -> Optional[Dict[str, str]]:
     """
-    Extract N°Contrat from an image using Azure Document Intelligence.
+    Extract contract numbers from an image using Azure Document Intelligence.
+    Detects both water and electricity contracts.
     
-    N°Contrat Format: 3701455886 / 1014871 (10 digits / 7 digits)
+    Water Contract Format: 3701XXXXXX / XXXXXXX (starts with 3701)
+    Electricity Contract Format: 4801XXXXXX / XXXXXXX (starts with 4801)
     
     Args:
         image_bytes: Image file bytes
         
     Returns:
-        str: Extracted contract number or None if extraction fails
+        dict: {'water_contract': str, 'electricity_contract': str} or None if extraction fails
     """
     try:
         from azure.ai.documentintelligence import DocumentIntelligenceClient
@@ -52,27 +54,34 @@ def extract_contract_from_image(image_bytes: bytes) -> Optional[str]:
         if result.content:
             extracted_text = result.content
         
-        # Pattern matching for N°Contrat
-        # Primary format: 3701455886 / 1014871 (10 digits / 7 digits)
+        # Pattern matching for Water and Electricity contracts
+        # Water starts with 3701, Electricity starts with 4801
+        result = {'water_contract': None, 'electricity_contract': None}
+        
+        # Patterns for both full format and partial format
         contract_patterns = [
-            r'(?:N°\s*Contrat|N°\s*Contract|رقم\s*العقد|Contract\s*Number)\s*:?\s*(\d{10})\s*/\s*(\d{7})',  # Full format with /
-            r'\b(\d{10})\s*/\s*(\d{7})\b',  # Standalone format: 3701455886 / 1014871
-            r'(?:N°\s*Contrat|N°\s*Contract|رقم\s*العقد)\s*:?\s*(\d{10})',  # Only first part
+            r'(?:N°\s*Contrat|N°\s*Contract|رقم\s*العقد|Contract\s*Number)\s*(?:eau|water|ماء)?\s*:?\s*(3701\d{6})\s*/\s*(\d{7})',  # Water full
+            r'\b(3701\d{6})\s*/\s*(\d{7})\b',  # Water standalone
+            r'(?:N°\s*Contrat|N°\s*Contract|رقم\s*العقد|Contract\s*Number)\s*(?:électricité|electricity|كهرباء)?\s*:?\s*(4801\d{6})\s*/\s*(\d{7})',  # Electricity full
+            r'\b(4801\d{6})\s*/\s*(\d{7})\b',  # Electricity standalone
         ]
         
         for pattern in contract_patterns:
             matches = re.findall(pattern, extracted_text, re.IGNORECASE)
-            if matches:
-                if isinstance(matches[0], tuple) and len(matches[0]) == 2:
-                    # Full format: combine both parts
-                    contract = f"{matches[0][0]} / {matches[0][1]}"
-                else:
-                    # Only first part found
-                    contract = matches[0]
-                return contract
+            for match in matches:
+                if isinstance(match, tuple) and len(match) == 2:
+                    contract_number = f"{match[0]} / {match[1]}"
+                    # Determine if it's water or electricity based on prefix
+                    if match[0].startswith('3701'):
+                        result['water_contract'] = contract_number
+                    elif match[0].startswith('4801'):
+                        result['electricity_contract'] = contract_number
         
-        # If no pattern matched, return None
-        return None
+        # Return None if no contracts found, otherwise return the dict
+        if result['water_contract'] is None and result['electricity_contract'] is None:
+            return None
+        
+        return result
         
     except Exception as e:
         print(f"Error in OCR extraction: {str(e)}")

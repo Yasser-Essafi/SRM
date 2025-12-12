@@ -1,6 +1,6 @@
 """
 Mock database using Pandas DataFrames.
-Simulates Azure SQL tables for Users and Zones.
+Simulates Azure SQL tables for Users, Water Invoices, and Electricity Invoices.
 """
 import pandas as pd
 from typing import Optional, List, Dict
@@ -10,54 +10,122 @@ import uuid
 
 # Users Table - Contains customer information
 users_table = pd.DataFrame({
-    'contract': ['3701455886 / 1014871', '3701455887 / 1014872', '3701455888 / 1014873', '3701455889 / 1014874', '3701455890 / 1014875'],
-    'name': ['Abdenbi EL MARZOUKI', 'Ahmed Sabil', 'محمد الإدريسي', 'خديجة العلوي', 'يوسف السباعي'],
-    'address': ['967, Lot. Sala Al Jadida Zone (1), Sala Al Jadida', '2 Rue BATTIT I Ghizlaine Imm 2 apt 03', 'شارع محمد الخامس، فاس', 'حي النخيل، مراكش', 'شارع الزرقطوني، طنجة'],
+    'user_id': [1, 2, 3, 4, 5],
+    'name': ['عبد النبي المرزوقي', 'أحمد السعيدي', 'محمد الإدريسي', 'خديجة العلوي', 'يوسف السباعي'],
+    'address': ['حي المسيرة، مراكش', 'حي الداوديات، مراكش', 'شارع محمد الخامس، مراكش', 'حي جيليز، مراكش', 'حي الصناعي، آسفي'],
     'phone': ['0612345678', '0698765432', '0611223344', '0655667788', '0699887766'],
-    'service_type': ['ماء وكهرباء', 'ماء', 'ماء', 'كهرباء', 'ماء وكهرباء'],
-    'zone_id': [1, 2, 1, 3, 2],
-    'payment_status': ['مدفوع', 'مدفوع', 'مدفوع', 'مدفوع', 'غير مدفوع'],
-    'last_payment_date': ['2026-01-15', '2026-01-08', '2026-01-28', '2026-01-10', '2026-01-15'],
-    'outstanding_balance': [0.0, 0.0, 0.0, 0.0, 890.0],
-    'service_status': ['نشط', 'نشط', 'نشط', 'نشط', 'مقطوع']
+    'zone_id': [1, 2, 3, 4, 5]
+})
+
+
+# Water Invoices Table - Contains water service information
+water_invoices_table = pd.DataFrame({
+    'water_contract_number': ['3701455886 / 1014871', '3701455887 / 1014872', '3701455888 / 1014873', '3701455890 / 1014875'],
+    'user_id': [1, 2, 3, 5],
+    'is_paid': [True, True, True, False],
+    'outstanding_balance': [0.0, 0.0, 0.0, 450.0],
+    'last_payment_date': ['2026-01-15', '2026-01-08', '2026-01-28', '2026-01-15'],
+    'cut_status': ['OK', 'OK', 'OK', 'CUT_OFF'],
+    'cut_reason': [None, None, None, 'Non-payment']
+})
+
+
+# Electricity Invoices Table - Contains electricity service information
+electricity_invoices_table = pd.DataFrame({
+    'electricity_contract_number': ['4801566997 / 2025982', '4801566998 / 2025983', '4801566999 / 2025984', '4801567001 / 2025986'],
+    'user_id': [1, 3, 4, 5],
+    'is_paid': [True, True, True, False],
+    'outstanding_balance': [0.0, 0.0, 0.0, 440.0],
+    'last_payment_date': ['2026-01-15', '2026-01-28', '2026-01-10', '2026-01-15'],
+    'cut_status': ['OK', 'OK', 'OK', 'CUT_OFF'],
+    'cut_reason': [None, None, None, 'Non-payment']
 })
 
 
 # Zones Table - Contains maintenance and outage information
 zones_table = pd.DataFrame({
-    'zone_id': [1, 2, 3, 4],
-    'zone_name': ['الدار البيضاء - وسط المدينة', 'الرباط - حي المحمدي', 'مراكش - القليعة', 'طنجة - المدينة القديمة'],
-    'maintenance_status': ['جاري الصيانة', 'لا توجد صيانة', 'لا توجد صيانة', 'جاري الصيانة'],
-    'outage_reason': ['إصلاح أنابيب المياه الرئيسية', None, None, 'صيانة محولات الكهرباء'],
-    'estimated_restoration': ['2024-12-04 18:00', None, None, '2024-12-05 14:00'],
-    'affected_services': ['ماء', None, None, 'كهرباء'],
-    'status_updated': ['2024-12-03 08:00', '2024-12-01 10:00', '2024-12-01 10:00', '2024-12-03 06:00']
+    'zone_id': [1, 2, 3, 4, 5],
+    'zone_name': ['مراكش - حي المسيرة', 'مراكش - حي الداوديات', 'مراكش - حي جيليز', 'مراكش - المدينة القديمة', 'آسفي - الحي الصناعي'],
+    'maintenance_status': ['جاري الصيانة', 'لا توجد صيانة', 'لا توجد صيانة', 'جاري الصيانة', 'لا توجد صيانة'],
+    'outage_reason': ['إصلاح أنابيب المياه الرئيسية', None, None, 'صيانة محولات الكهرباء', None],
+    'estimated_restoration': ['2024-12-04 18:00', None, None, '2024-12-05 14:00', None],
+    'affected_services': ['ماء', None, None, 'كهرباء', None],
+    'status_updated': ['2024-12-03 08:00', '2024-12-01 10:00', '2024-12-01 10:00', '2024-12-03 06:00', '2024-12-01 10:00']
 })
 
 
-def get_user_by_contract(contract: str) -> Optional[dict]:
+def get_user_by_water_contract(water_contract: str) -> Optional[dict]:
     """
-    Retrieve user information by Contract Number (N°Contrat).
+    Retrieve user and water invoice information by water contract number.
     Supports both full format (3701455886 / 1014871) and partial (3701455886).
     
     Args:
-        contract: Contract Number (full or partial)
+        water_contract: Water Contract Number (full or partial)
         
     Returns:
-        dict: User information or None if not found
+        dict: Combined user and water invoice information or None if not found
     """
     # First try exact match
-    user = users_table[users_table['contract'] == contract]
+    invoice = water_invoices_table[water_invoices_table['water_contract_number'] == water_contract]
     
     # If not found and contract doesn't contain '/', try partial match
-    if user.empty and '/' not in contract:
-        # Extract just the first part from database entries and compare
-        user = users_table[users_table['contract'].str.split(' / ').str[0] == contract.strip()]
+    if invoice.empty and '/' not in water_contract:
+        invoice = water_invoices_table[water_invoices_table['water_contract_number'].str.split(' / ').str[0] == water_contract.strip()]
     
+    if invoice.empty:
+        return None
+    
+    invoice_dict = invoice.iloc[0].to_dict()
+    user_id = invoice_dict['user_id']
+    
+    # Get user information
+    user = users_table[users_table['user_id'] == user_id]
     if user.empty:
         return None
     
-    return user.iloc[0].to_dict()
+    user_dict = user.iloc[0].to_dict()
+    
+    # Combine user and invoice data
+    result = {**user_dict, **invoice_dict}
+    result['service_type'] = 'ماء'
+    return result
+
+
+def get_user_by_electricity_contract(electricity_contract: str) -> Optional[dict]:
+    """
+    Retrieve user and electricity invoice information by electricity contract number.
+    Supports both full format (4801566997 / 2025982) and partial (4801566997).
+    
+    Args:
+        electricity_contract: Electricity Contract Number (full or partial)
+        
+    Returns:
+        dict: Combined user and electricity invoice information or None if not found
+    """
+    # First try exact match
+    invoice = electricity_invoices_table[electricity_invoices_table['electricity_contract_number'] == electricity_contract]
+    
+    # If not found and contract doesn't contain '/', try partial match
+    if invoice.empty and '/' not in electricity_contract:
+        invoice = electricity_invoices_table[electricity_invoices_table['electricity_contract_number'].str.split(' / ').str[0] == electricity_contract.strip()]
+    
+    if invoice.empty:
+        return None
+    
+    invoice_dict = invoice.iloc[0].to_dict()
+    user_id = invoice_dict['user_id']
+    
+    # Get user information
+    user = users_table[users_table['user_id'] == user_id]
+    if user.empty:
+        return None
+    
+    user_dict = user.iloc[0].to_dict()
+    
+    # Combine user and invoice data
+    result = {**user_dict, **invoice_dict}
+    result['service_type'] = 'كهرباء'
+    return result
 
 
 def get_zone_by_id(zone_id: int) -> Optional[dict]:
@@ -81,6 +149,16 @@ def get_zone_by_id(zone_id: int) -> Optional[dict]:
 def get_all_users() -> pd.DataFrame:
     """Get all users from the database."""
     return users_table.copy()
+
+
+def get_all_water_invoices() -> pd.DataFrame:
+    """Get all water invoices from the database."""
+    return water_invoices_table.copy()
+
+
+def get_all_electricity_invoices() -> pd.DataFrame:
+    """Get all electricity invoices from the database."""
+    return electricity_invoices_table.copy()
 
 
 def get_all_zones() -> pd.DataFrame:

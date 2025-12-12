@@ -10,13 +10,13 @@ ocr_bp = Blueprint('ocr', __name__)
 @ocr_bp.route('/ocr/extract-contract', methods=['POST'])
 def extract_contract():
     """
-    Extract N°Contrat only from uploaded bill image.
+    Extract water and/or electricity contract numbers from uploaded bill image.
     
     Form Data:
         file: Image file (jpg, png, pdf)
     
     Returns:
-        JSON: Extracted contract number
+        JSON: Extracted contract numbers (water and/or electricity)
     """
     try:
         if 'file' not in request.files:
@@ -36,19 +36,20 @@ def extract_contract():
         # Read file bytes
         image_bytes = file.read()
         
-        # Extract Contract Number
-        contract = extract_contract_from_image(image_bytes)
+        # Extract Contract Numbers (water and/or electricity)
+        contracts = extract_contract_from_image(image_bytes)
         
-        if not contract:
+        if not contracts:
             return jsonify({
-                'error': 'Contract number not found in image',
-                'error_ar': 'لم يتم العثور على رقم العقد في الصورة'
+                'error': 'No contract numbers found in image',
+                'error_ar': 'لم يتم العثور على أرقام عقود في الصورة'
             }), 404
         
         return jsonify({
-            'contract': contract,
+            'water_contract': contracts.get('water_contract'),
+            'electricity_contract': contracts.get('electricity_contract'),
             'status': 'success'
-        }), 200
+        })
         
     except Exception as e:
         return jsonify({

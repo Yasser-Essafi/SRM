@@ -1,6 +1,7 @@
 """
 AI Service using LangChain and Azure OpenAI.
 Defines the agent, tools, and Arabic language prompts.
+Refactored to support separate water and electricity contracts.
 """
 from typing import Optional, Dict, Any, List
 from langchain_core.tools import tool
@@ -9,153 +10,264 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnablePassthrough
 from config.settings import settings
-from data.mock_db import get_user_by_contract, get_zone_by_id
+from data.mock_db import get_user_by_water_contract, get_user_by_electricity_contract, get_zone_by_id
 
 
-# Tool Functions (without decorator for direct calling)
-def _check_payment_impl(contract: str) -> str:
-    """Implementation of payment check - Returns multilingual data."""
-    user = get_user_by_contract(contract)
+# Tool Functions for Water Service
+def _check_water_payment_impl(water_contract: str) -> str:
+    """Implementation of water payment check - Returns multilingual data."""
+    user = get_user_by_water_contract(water_contract)
     
     if not user:
-        return f"CONTRACT_NOT_FOUND:{contract}"
+        return f"WATER_CONTRACT_NOT_FOUND:{water_contract}"
     
     name = user['name']
-    payment_status = user['payment_status']
+    is_paid = user['is_paid']
     outstanding_balance = user['outstanding_balance']
     last_payment = user['last_payment_date']
-    service_status = user['service_status']
-    service_type = user['service_type']
+    cut_status = user['cut_status']
+    cut_reason = user.get('cut_reason')
     
-    # Determine service emoji
-    service_emoji = "💧⚡" if service_type == "ماء وكهرباء" else ("💧" if service_type == "ماء" else "⚡")
-    
-    if payment_status == 'مدفوع':
+    if is_paid:
         return f"""
-[PAYMENT_STATUS: PAID]
+[WATER_PAYMENT_STATUS: PAID]
 Customer: {name}
-Service Type: {service_emoji} {service_type}
-Payment Status: ✅ {payment_status} (Paid)
+Service Type: 💧 Water (ماء)
+Payment Status: ✅ Paid (مدفوع)
 Last Payment: {last_payment}
 Outstanding Balance: {outstanding_balance} MAD
-Service Status: {service_status}
+Service Status: {cut_status}
 
-Note: Payment is up to date. If service is interrupted, it may be due to maintenance in the area.
-Important: Match service type ({service_type}) with customer's reported problem.
+Note: Water payment is up to date. If water service is interrupted, it may be due to maintenance in the area.
 """
     else:
         return f"""
-[PAYMENT_STATUS: UNPAID]
+[WATER_PAYMENT_STATUS: UNPAID]
 Customer: {name}
-Service Type: {service_emoji} {service_type}
-Payment Status: ⚠️ {payment_status} (Unpaid)
+Service Type: 💧 Water (ماء)
+Payment Status: ⚠️ Unpaid (غير مدفوع)
 Last Payment: {last_payment}
 Outstanding Balance: {outstanding_balance} MAD
-Service Status: {service_status}
+Service Status: {cut_status}
+Cut Reason: {cut_reason}
 
-Reason: Outstanding balance of {outstanding_balance} MAD. Payment required to restore {service_type} service.
+Reason: Outstanding balance of {outstanding_balance} MAD. Payment required to restore water service.
 
 Payment Methods:
 1. SRM Mobile App
 2. Payment agencies (Wafacash, Cash Plus)
 3. Bank
 
-Note: Currently interrupted service: {service_type}
+Note: Water service is currently interrupted due to non-payment.
 """
 
 
-def _check_maintenance_impl(contract: str) -> str:
-    """Implementation of maintenance check - Returns multilingual data."""
-    user = get_user_by_contract(contract)
+def _check_water_maintenance_impl(water_contract: str) -> str:
+    """Implementation of water maintenance check - Returns multilingual data."""
+    user = get_user_by_water_contract(water_contract)
     
     if not user:
-        return f"CONTRACT_NOT_FOUND:{contract}"
+        return f"WATER_CONTRACT_NOT_FOUND:{water_contract}"
     
     zone_id = user['zone_id']
     zone = get_zone_by_id(zone_id)
-    service_type = user['service_type']
     
     if not zone:
         return "ZONE_NOT_FOUND"
     
     zone_name = zone['zone_name']
     maintenance_status = zone['maintenance_status']
+    affected_services = zone.get('affected_services', '')
     
-    if maintenance_status == 'جاري الصيانة':
+    if maintenance_status == 'جاري الصيانة' and 'ماء' in str(affected_services):
         outage_reason = zone['outage_reason']
         estimated_restoration = zone['estimated_restoration']
-        affected_services = zone['affected_services']
-        
-        # Determine service emoji for affected services
-        service_emoji = "💧" if affected_services == "ماء" else ("⚡" if affected_services == "كهرباء" else "💧⚡")
         
         return f"""
-[MAINTENANCE_IN_PROGRESS]
+[WATER_MAINTENANCE_IN_PROGRESS]
 📍 Zone: {zone_name}
 ⚙️ Maintenance Status: {maintenance_status} (In Progress)
 
-{service_emoji} Affected Service: {affected_services}
+💧 Affected Service: Water (ماء)
 Outage Reason: {outage_reason}
 Estimated Restoration: {estimated_restoration}
-
-Customer Subscription Type: {service_type}
-
-IMPORTANT NOTE:
-- If customer's problem is about "{affected_services}", this is the reason (area maintenance).
-- If customer's problem is about a different service (not "{affected_services}"), there is NO maintenance affecting it currently.
 
 Apologies for the inconvenience. Our teams are working to resolve the issue as soon as possible.
 """
     else:
         return f"""
-[NO_MAINTENANCE]
+[NO_WATER_MAINTENANCE]
 📍 Zone: {zone_name}
-✅ Maintenance Status: {maintenance_status} (No maintenance)
+✅ Maintenance Status: No water maintenance
 
-Customer Subscription Type: {service_type}
+There are no scheduled water maintenance works in your area currently.
+If there is a water issue, it may be related to payment or a local problem with the water meter/connections.
+"""
 
-There are no scheduled maintenance works in your area currently.
-If there is a service issue, it may be related to payment or a local problem with the meter/connections.
+
+# Tool Functions for Electricity Service
+def _check_electricity_payment_impl(electricity_contract: str) -> str:
+    """Implementation of electricity payment check - Returns multilingual data."""
+    user = get_user_by_electricity_contract(electricity_contract)
+    
+    if not user:
+        return f"ELECTRICITY_CONTRACT_NOT_FOUND:{electricity_contract}"
+    
+    name = user['name']
+    is_paid = user['is_paid']
+    outstanding_balance = user['outstanding_balance']
+    last_payment = user['last_payment_date']
+    cut_status = user['cut_status']
+    cut_reason = user.get('cut_reason')
+    
+    if is_paid:
+        return f"""
+[ELECTRICITY_PAYMENT_STATUS: PAID]
+Customer: {name}
+Service Type: ⚡ Electricity (كهرباء)
+Payment Status: ✅ Paid (مدفوع)
+Last Payment: {last_payment}
+Outstanding Balance: {outstanding_balance} MAD
+Service Status: {cut_status}
+
+Note: Electricity payment is up to date. If electricity service is interrupted, it may be due to maintenance in the area.
+"""
+    else:
+        return f"""
+[ELECTRICITY_PAYMENT_STATUS: UNPAID]
+Customer: {name}
+Service Type: ⚡ Electricity (كهرباء)
+Payment Status: ⚠️ Unpaid (غير مدفوع)
+Last Payment: {last_payment}
+Outstanding Balance: {outstanding_balance} MAD
+Service Status: {cut_status}
+Cut Reason: {cut_reason}
+
+Reason: Outstanding balance of {outstanding_balance} MAD. Payment required to restore electricity service.
+
+Payment Methods:
+1. SRM Mobile App
+2. Payment agencies (Wafacash, Cash Plus)
+3. Bank
+
+Note: Electricity service is currently interrupted due to non-payment.
+"""
+
+
+def _check_electricity_maintenance_impl(electricity_contract: str) -> str:
+    """Implementation of electricity maintenance check - Returns multilingual data."""
+    user = get_user_by_electricity_contract(electricity_contract)
+    
+    if not user:
+        return f"ELECTRICITY_CONTRACT_NOT_FOUND:{electricity_contract}"
+    
+    zone_id = user['zone_id']
+    zone = get_zone_by_id(zone_id)
+    
+    if not zone:
+        return "ZONE_NOT_FOUND"
+    
+    zone_name = zone['zone_name']
+    maintenance_status = zone['maintenance_status']
+    affected_services = zone.get('affected_services', '')
+    
+    if maintenance_status == 'جاري الصيانة' and 'كهرباء' in str(affected_services):
+        outage_reason = zone['outage_reason']
+        estimated_restoration = zone['estimated_restoration']
+        
+        return f"""
+[ELECTRICITY_MAINTENANCE_IN_PROGRESS]
+📍 Zone: {zone_name}
+⚙️ Maintenance Status: {maintenance_status} (In Progress)
+
+⚡ Affected Service: Electricity (كهرباء)
+Outage Reason: {outage_reason}
+Estimated Restoration: {estimated_restoration}
+
+Apologies for the inconvenience. Our teams are working to resolve the issue as soon as possible.
+"""
+    else:
+        return f"""
+[NO_ELECTRICITY_MAINTENANCE]
+📍 Zone: {zone_name}
+✅ Maintenance Status: No electricity maintenance
+
+There are no scheduled electricity maintenance works in your area currently.
+If there is an electricity issue, it may be related to payment or a local problem with the electricity meter/connections.
 """
 
 
 # Create tool wrappers with decorator
 @tool
-def check_payment(contract: str) -> str:
-    """Check payment status and outstanding balance for a customer by contract number.
-    Use this to verify if customer has unpaid bills or payment is up to date.
+def check_water_payment(water_contract: str) -> str:
+    """Check water payment status and outstanding balance for a customer by water contract number.
+    Use this to verify if customer has unpaid water bills or water payment is up to date.
     
-    Vérifier l'état du paiement et le solde impayé d'un client par numéro de contrat.
-    التحقق من حالة الدفع والرصيد المستحق للعميل برقم العقد.
+    Vérifier l'état du paiement de l'eau et le solde impayé d'un client par numéro de contrat eau.
+    التحقق من حالة دفع الماء والرصيد المستحق للعميل برقم عقد الماء.
     
     Args:
-        contract: Contract Number (format: 3701455886 / 1014871)
+        water_contract: Water Contract Number (format: 3701455886 / 1014871)
         
     Returns:
-        str: Payment status information that you must translate to customer's language
+        str: Water payment status information that you must translate to customer's language
     """
-    return _check_payment_impl(contract)
+    return _check_water_payment_impl(water_contract)
 
 
 @tool
-def check_maintenance(contract: str) -> str:
-    """Check for maintenance and outages in customer's zone. Requires contract number.
-    Use this to verify if there are scheduled maintenance works affecting services.
+def check_water_maintenance(water_contract: str) -> str:
+    """Check for water maintenance and outages in customer's zone. Requires water contract number.
+    Use this to verify if there are scheduled water maintenance works affecting water service.
     
-    Vérifier les travaux de maintenance et les coupures dans la zone du client.
-    التحقق من أعمال الصيانة والانقطاعات في منطقة العميل.
+    Vérifier les travaux de maintenance de l'eau et les coupures d'eau dans la zone du client.
+    التحقق من أعمال صيانة الماء وانقطاعات الماء في منطقة العميل.
     
     Args:
-        contract: Contract Number (format: 3701455886 / 1014871)
+        water_contract: Water Contract Number (format: 3701455886 / 1014871)
         
     Returns:
-        str: Maintenance information that you must translate to customer's language
+        str: Water maintenance information that you must translate to customer's language
     """
-    return _check_maintenance_impl(contract)
+    return _check_water_maintenance_impl(water_contract)
+
+
+@tool
+def check_electricity_payment(electricity_contract: str) -> str:
+    """Check electricity payment status and outstanding balance for a customer by electricity contract number.
+    Use this to verify if customer has unpaid electricity bills or electricity payment is up to date.
+    
+    Vérifier l'état du paiement de l'électricité et le solde impayé d'un client par numéro de contrat électricité.
+    التحقق من حالة دفع الكهرباء والرصيد المستحق للعميل برقم عقد الكهرباء.
+    
+    Args:
+        electricity_contract: Electricity Contract Number (format: 4801566997 / 2025982)
+        
+    Returns:
+        str: Electricity payment status information that you must translate to customer's language
+    """
+    return _check_electricity_payment_impl(electricity_contract)
+
+
+@tool
+def check_electricity_maintenance(electricity_contract: str) -> str:
+    """Check for electricity maintenance and outages in customer's zone. Requires electricity contract number.
+    Use this to verify if there are scheduled electricity maintenance works affecting electricity service.
+    
+    Vérifier les travaux de maintenance de l'électricité et les coupures d'électricité dans la zone du client.
+    التحقق من أعمال صيانة الكهرباء وانقطاعات الكهرباء في منطقة العميل.
+    
+    Args:
+        electricity_contract: Electricity Contract Number (format: 4801566997 / 2025982)
+        
+    Returns:
+        str: Electricity maintenance information that you must translate to customer's language
+    """
+    return _check_electricity_maintenance_impl(electricity_contract)
 
 
 # Collect tools
-tools = [check_payment, check_maintenance]
+tools = [check_water_payment, check_water_maintenance, check_electricity_payment, check_electricity_maintenance]
 
 
 # Multilingual System Prompt
@@ -171,11 +283,11 @@ Your role:
 
 2. **CONVERSATION FLOW - FOLLOW STRICTLY**:
    
-   **STEP 1 - IDENTIFY AND CONFIRM THE PROBLEM**:
+   **STEP 1 - IDENTIFY THE PROBLEM**:
    - Automatically detect from the customer's message if the issue is about:
-     * Water (ماء, eau, water, agua)
-     * Electricity (كهرباء, électricité, electricity, electricidad)
-     * Both water and electricity
+     * Water ONLY (ماء, eau, water, agua)
+     * Electricity ONLY (كهرباء, électricité, electricity, electricidad)
+     * BOTH water AND electricity
    - DO NOT ask "what is your problem?" - understand it from their message
    - Common phrases: "ما عندي الماء", "l'électricité est coupée", "pas d'eau", "انقطاع الكهرباء"
    - **MENTION what you understood** before asking for contract number:
@@ -183,30 +295,51 @@ Your role:
      * French: "Je comprends que vous avez un problème de [eau/électricité/eau et électricité]"
      * English: "I understand you have a [water/electricity/water and electricity] problem"
    
-   **STEP 2 - ASK FOR CONTRACT NUMBER (neutrally, without explaining why)**:
-   - After confirming the problem, ask for contract number:
-     * Arabic: "من فضلك، هل يمكنك إعطائي رقم العقد الخاص بك؟"
-     * French: "Pourriez-vous me donner votre numéro de contrat, s'il vous plaît ?"
-     * English: "Could you please provide your contract number?"
-   - DO NOT say "to check payment" or "to check maintenance" - just ask for the number
-   - **If contract number is already provided in message**, use check_payment and check_maintenance tools IMMEDIATELY
-   - **If customer uploads a bill image**: The system will automatically extract the contract number
-   - You can suggest: "You can upload a photo of your bill"
+   **STEP 2 - ASK FOR THE APPROPRIATE CONTRACT NUMBER**:
    
-   **STEP 3 - CHECK SILENTLY AND RESPOND**:
-   - Use the tools to check payment and maintenance
-   - Analyze the results based on the identified problem type
-   - Give a clear answer about the cause
+   A) **If WATER problem detected**:
+      - Ask for WATER contract number (رقم عقد الماء, numéro de contrat eau, water contract number)
+      - DO NOT give examples or format in the question
+      - Arabic: "من فضلك، هل يمكنك إعطائي رقم عقد الماء الخاص بك؟"
+      - French: "Pourriez-vous me donner votre numéro de contrat d'eau, s'il vous plaît ?"
+      - English: "Could you please provide your water contract number?"
+      
+   B) **If ELECTRICITY problem detected**:
+      - Ask for ELECTRICITY contract number (رقم عقد الكهرباء, numéro de contrat électricité, electricity contract number)
+      - DO NOT give examples or format in the question
+      - Arabic: "من فضلك، هل يمكنك إعطائي رقم عقد الكهرباء الخاص بك؟"
+      - French: "Pourriez-vous me donner votre numéro de contrat d'électricité, s'il vous plaît ?"
+      - English: "Could you please provide your electricity contract number?"
+      
+   C) **If BOTH water AND electricity problems detected**:
+      - FIRST ask for WATER contract number
+      - THEN after analyzing water, ask for ELECTRICITY contract number
+      - Handle SEQUENTIALLY - one service at a time
+      - DO NOT give examples or format
+      - Arabic: "دعنا نتحقق من الماء أولاً. من فضلك، أعطني رقم عقد الماء."
+      - French: "Vérifions d'abord l'eau. S'il vous plaît, donnez-moi le numéro de contrat d'eau."
+      - English: "Let's check water first. Please provide your water contract number."
    
-3. **Link the problem to the appropriate service**:
-   - If customer mentions water problem, check "service_type" and "affected_services" in data
-   - If service_type = "ماء" (water) or "ماء وكهرباء" (water & electricity), use water data
-   - If affected_services = "ماء", inform customer that maintenance affects water
-   - If customer mentions electricity problem, check "service_type" and "affected_services"
-   - If service_type = "كهرباء" (electricity) or "ماء وكهرباء", use electricity data
-   - If affected_services = "كهرباء", inform customer that maintenance affects electricity
-7. If payment is up-to-date, check for maintenance in the area
-8. Provide clear, helpful information related to the specific service type
+   **IMPORTANT**:
+   - If contract number is already in the message, use it immediately
+   - If customer uploads a bill image, system extracts contract automatically
+   - Water contracts start with 3701XXXXXX
+   - Electricity contracts start with 4801XXXXXX
+   
+   **STEP 3 - CHECK AND RESPOND**:
+   - Use the appropriate tools based on problem type:
+     * Water problem → check_water_payment + check_water_maintenance
+     * Electricity problem → check_electricity_payment + check_electricity_maintenance
+     * Both → check water first, then electricity (sequential)
+   - Analyze the results and provide clear explanation
+   - Link the response to the specific service the customer asked about
+   
+3. **RESPONSE RULES**:
+   - Answer ONLY about the service the customer asked about
+   - DO NOT mention other services unless they are ALSO affected
+   - If water is the problem and electricity is fine, talk about water ONLY
+   - If electricity is the problem and water is fine, talk about electricity ONLY
+   - Only mention both services if BOTH are interrupted
 
 ⚠️ CRITICAL FORMATTING RULES:
 - **NO MARKDOWN**: Do not use **, -, #, bullet points, or any special formatting
@@ -215,49 +348,39 @@ Your role:
 - Respond in natural conversational style like speaking to a person
 - Use customer's name when addressing them if available
 
-⚠️ SERVICE-SPECIFIC RESPONSE RULES:
-
-1. **Identify the main problem** (electricity or water) from customer's question
-2. **Answer ONLY about the main problem**
-3. **Do NOT mention the other service** unless it's ALSO interrupted
-
-⚠️ CRITICAL - Never mention problems that don't exist:
-- If customer asks about electricity, answer about electricity ONLY
-- If the other service works normally, DO NOT mention it at all
-- Only mention the second service if it's ALSO interrupted (service_status = مقطوع OR maintenance_status = جاري الصيانة)
-
 ⚠️ SPECIAL RULE - When problem is NOT payment or maintenance:
 - If customer reports service interruption BUT:
-  1. Payment is up to date (payment_status = مدفوع)
+  1. Payment is up to date (is_paid = True)
   2. No maintenance for that service in the area
-  3. Service status is active in system (service_status = نشط)
+  3. Service status is OK in system (cut_status = OK)
 - This means: Local technical issue at customer's home, NOT payment or maintenance
 - Tell customer clearly: "The problem is not due to payment or maintenance. It appears to be a technical issue at your location."
 - Advise to call technical support to send a technician
 - Technical support number: **05-22-XX-XX-XX**
 
 Correct examples:
-- Customer asks about electricity and ONLY electricity is cut:
-  ✅ Talk about electricity only, don't mention water
-  
-- Customer asks about electricity and BOTH are cut:
-  ✅ Explain electricity in detail, then add: "Additionally, water is also interrupted for the same reason."
-  
 - Customer asks about water and ONLY water is cut:
   ✅ Talk about water only, don't mention electricity
   
-- Customer asks about electricity but electricity works and water is cut:
-  ✅ Say: "Your electricity is working normally with no issues."
+- Customer asks about electricity and ONLY electricity is cut:
+  ✅ Talk about electricity only, don't mention water
+  
+- Customer asks about both services:
+  ✅ Ask for water contract first, explain water situation
+  ✅ Then ask for electricity contract, explain electricity situation
 
-- Customer asks about electricity, it's cut but payment is current and no maintenance:
-  ✅ Say: "After checking your account, I found your payments are up to date and there is no maintenance in your area. The problem may be technical at your home. I recommend calling technical support at 05-22-XX-XX-XX to send a technician to inspect your connections and meter."
+- Customer asks about water, water payment current, no maintenance:
+  ✅ Say: "After checking your water account, I found your payments are up to date and there is no water maintenance in your area. The problem may be technical at your home. I recommend calling technical support at 05-22-XX-XX-XX to send a technician to inspect your water connections and meter."
 
 Important rules:
 - **ALWAYS respond in the SAME language the customer is using**
 - **NO markdown or special formatting** - plain paragraph text only
 - Be polite and professional with natural conversational tone
-- **Identify the problem type (water/electricity) from customer's message**
-- Link the problem to retrieved database data (service_type, affected_services)
+- **Identify the problem type (water/electricity/both) from customer's message**
+- Ask for the CORRECT contract number for the service in question
+- Water contracts: 3701XXXXXX / XXXXXXX
+- Electricity contracts: 4801XXXXXX / XXXXXXX
+- Handle BOTH problems SEQUENTIALLY (water first, then electricity)
 - Focus ONLY on the reported problem
 - Use continuous paragraphs without bullet points or lists
 - Provide practical solutions at the end in natural sentences
@@ -267,7 +390,7 @@ Important rules:
 - Do not invent information - only use available tools
 
 Language-specific greetings:
-- Arabic: "مرحباً بك في خدمة عملاء SRM. كيف يمكنني مساعدتك اليوم؟"
+- Arabic: "مرحباً بك في خدمة عملاء الشركة الجهوية متعددة الاختصاصات. كيف يمكنني مساعدتك اليوم؟"
 - French: "Bienvenue au service client SRM. Comment puis-je vous aider aujourd'hui ?"
 - English: "Welcome to SRM customer service. How can I help you today?"
 - Spanish: "Bienvenido al servicio al cliente de SRM. ¿Cómo puedo ayudarle hoy?"

@@ -21,7 +21,7 @@ def render_chat_interface(agent_executor):
         # Add welcome message
         st.session_state.messages.append({
             "role": "assistant",
-            "content": "مرحباً بك في خدمة عملاء SRM! 👋\n\nأنا هنا لمساعدتك في فهم سبب انقطاع الماء أو الكهرباء.\n\nالرجاء تقديم رقم العقد الخاص بك (مثال: 3701455886 / 1014871) أو رفع صورة الفاتورة."
+            "content": "مرحباً بك في خدمة عملاء SRM! 👋\n\nأنا هنا لمساعدتك في فهم سبب انقطاع الماء أو الكهرباء.\n\n**أرقام العقود:**\n- رقم عقد الماء يبدأ بـ 3701 (مثال: 3701455886 / 1014871)\n- رقم عقد الكهرباء يبدأ بـ 4801 (مثال: 4801566997 / 2025982)\n\nيمكنك تقديم رقم العقد أو رفع صورة الفاتورة."
         })
     
     # Image upload section
@@ -86,13 +86,23 @@ def render_chat_interface(agent_executor):
                         else:
                             st.warning("⚠️ لم يتم العثور على رقم العقد. يمكنك إدخاله يدوياً.")
                 else:
-                    # Extract only Contract
-                    extracted_contract = extract_contract_from_image(image_bytes)
+                    # Extract only Contract Numbers
+                    extracted_contracts = extract_contract_from_image(image_bytes)
                     
-                    if extracted_contract:
-                        st.success(f"✅ تم استخراج رقم العقد: {extracted_contract}")
-                        # Add extracted contract to chat
-                        user_message = f"رقم العقد الخاص بي هو: {extracted_contract}"
+                    if extracted_contracts:
+                        water_contract = extracted_contracts.get('water_contract')
+                        electricity_contract = extracted_contracts.get('electricity_contract')
+                        
+                        contract_info = []
+                        if water_contract:
+                            contract_info.append(f"رقم عقد الماء: {water_contract}")
+                        if electricity_contract:
+                            contract_info.append(f"رقم عقد الكهرباء: {electricity_contract}")
+                        
+                        st.success("✅ تم استخراج أرقام العقود:\n" + "\n".join(contract_info))
+                        
+                        # Add extracted contracts to chat
+                        user_message = "\n".join(contract_info)
                         st.session_state.messages.append({
                             "role": "user",
                             "content": user_message
