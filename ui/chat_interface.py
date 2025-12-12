@@ -89,7 +89,7 @@ def render_chat_interface(agent_executor):
                     # Extract only Contract Numbers
                     extracted_contracts = extract_contract_from_image(image_bytes)
                     
-                    if extracted_contracts:
+                    if extracted_contracts and extracted_contracts.get('status') != 'not_found':
                         water_contract = extracted_contracts.get('water_contract')
                         electricity_contract = extracted_contracts.get('electricity_contract')
                         
@@ -99,29 +99,34 @@ def render_chat_interface(agent_executor):
                         if electricity_contract:
                             contract_info.append(f"رقم عقد الكهرباء: {electricity_contract}")
                         
-                        st.success("✅ تم استخراج أرقام العقود:\n" + "\n".join(contract_info))
-                        
-                        # Add extracted contracts to chat
-                        user_message = "\n".join(contract_info)
-                        st.session_state.messages.append({
-                            "role": "user",
-                            "content": user_message
-                        })
-                        
-                        # Get agent response
-                        with st.spinner("جاري المعالجة..."):
-                            response = run_agent(
-                                agent_executor,
-                                user_message,
-                                st.session_state.messages[:-1]
-                            )
+                        if contract_info:
+                            st.success("✅ تم استخراج أرقام العقود:\n" + "\n".join(contract_info))
+                            
+                            # Add extracted contracts to chat
+                            user_message = "\n".join(contract_info)
                             st.session_state.messages.append({
-                                "role": "assistant",
-                                "content": response
+                                "role": "user",
+                                "content": user_message
                             })
-                        st.rerun()
+                            
+                            # Get agent response
+                            with st.spinner("جاري المعالجة..."):
+                                response = run_agent(
+                                    agent_executor,
+                                    user_message,
+                                    st.session_state.messages[:-1]
+                                )
+                                st.session_state.messages.append({
+                                    "role": "assistant",
+                                    "content": response
+                                })
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ " + extracted_contracts.get('message', 'لم يتم العثور على أرقام عقود في الصورة'))
                     else:
-                        st.error("❌ لم يتم العثور على رقم العقد في الصورة. الرجاء إدخاله يدوياً.")
+                        # Show OCR failure message
+                        error_message = extracted_contracts.get('message', 'لم أتمكن من استخراج رقم العقد من الصورة. الرجاء التأكد من أن الصورة واضحة وتحتوي على رقم العقد، أو يمكنك كتابة الرقم مباشرة.')
+                        st.warning("⚠️ " + error_message)
     
     st.markdown("---")
     st.markdown("### 💬 المحادثة")

@@ -22,7 +22,7 @@ def extract_contract():
         if 'file' not in request.files:
             return jsonify({
                 'error': 'No file uploaded',
-                'error_ar': 'لم يتم رفع أي ملف'
+                'error_ar': 'لم يتم رفع ألم أتمكن من استخراج رقم العقد من الصورة.ي ملف'
             }), 400
         
         file = request.files['file']
@@ -41,9 +41,13 @@ def extract_contract():
         
         if not contracts:
             return jsonify({
-                'error': 'No contract numbers found in image',
-                'error_ar': 'لم يتم العثور على أرقام عقود في الصورة'
-            }), 404
+                'water_contract': None,
+                'electricity_contract': None,
+                'status': 'not_found',
+                'message': 'لم أتمكن من استخراج رقم العقد من الصورة. الرجاء التأكد من أن الصورة واضحة وتحتوي على رقم العقد، أو يمكنك كتابة الرقم مباشرة.',
+                'message_en': 'I could not extract the contract number from the image. Please make sure the image is clear and contains the contract number, or you can type the number directly.',
+                'message_fr': "Je n'ai pas pu extraire le numéro de contrat de l'image. Veuillez vous assurer que l'image est claire et contient le numéro de contrat, ou vous pouvez taper le numéro directement."
+            }), 200
         
         return jsonify({
             'water_contract': contracts.get('water_contract'),
