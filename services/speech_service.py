@@ -42,10 +42,10 @@ def recognize_speech_from_file(audio_file_path: str, language: str = None) -> Tu
                 audio_config=audio_config
             )
         else:
-            # Auto-detect language from multiple candidates
+            # Auto-detect language from multiple candidates (MAX 4 for Azure)
             # Priority: French first to avoid false Darija detection
             auto_detect_source_language_config = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
-                languages=["fr-FR", "ar-MA", "ar-SA", "en-US", "es-ES"]
+                languages=["fr-FR", "ar-MA", "ar-SA", "en-US"]
             )
             speech_recognizer = speechsdk.SpeechRecognizer(
                 speech_config=speech_config,
@@ -122,10 +122,10 @@ def recognize_speech_from_bytes(audio_data: bytes, audio_format: str = "wav", la
                 audio_config=audio_config
             )
         else:
-            # Auto-detect language from multiple candidates
+            # Auto-detect language from multiple candidates (MAX 4 for Azure)
             # Priority: French first to avoid false Darija detection
             auto_detect_source_language_config = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
-                languages=["fr-FR", "ar-MA", "ar-SA", "en-US", "es-ES"]
+                languages=["fr-FR", "ar-MA", "ar-SA", "en-US"]
             )
             speech_recognizer = speechsdk.SpeechRecognizer(
                 speech_config=speech_config,
@@ -170,19 +170,10 @@ def get_supported_languages() -> dict:
         dict: Dictionary of language codes and names
     """
     return {
-        "ar-SA": "العربية (السعودية)",
-        "ar-EG": "العربية (مصر)",
-        "ar-MA": "العربية (المغرب)",
-        "ar-AE": "العربية (الإمارات)",
-        "ar-DZ": "العربية (الجزائر)",
-        "ar-TN": "العربية (تونس)",
-        "fr-FR": "Français (France)",
-        "fr-MA": "Français (Maroc)",
-        "en-US": "English (US)",
-        "en-GB": "English (UK)",
-        "es-ES": "Español (España)",
-        "es-MX": "Español (México)",
-        "auto": "Détection automatique / Auto-detect"
+    "fr-FR": "Français",
+    "ar-MA": "العربية (المغرب)",
+    "ar-SA": "العربية (السعودية)",
+    "en-US": "English (US)"
     }
 
 

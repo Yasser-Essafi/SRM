@@ -59,7 +59,7 @@ def speech_to_text():
     
     Request:
         - Multipart form data with 'audio' file
-        - Optional: 'language' field (default: ar-SA)
+        - Optional: 'language' field (auto detected even if not provided))
     
     Returns:
         JSON: {
@@ -93,7 +93,9 @@ def speech_to_text():
             }), 400
         
         # Get language parameter (optional, defaults to ar-MA)
-        language = request.form.get('language', 'ar-MA')
+        language = request.form.get('language', None)
+        if language == '' or language == 'auto':
+            language = None  # Let service auto-detect
         
         # Save file temporarily
         filename = secure_filename(audio_file.filename)
@@ -134,7 +136,7 @@ def speech_to_chat():
     
     Request:
         - Multipart form data with 'audio' file
-        - Optional: 'language' field (default: ar-MA)
+        - Optional: 'language' field (auto detected if not provided)
         - Optional: 'conversation_id' field
     
     Returns:
@@ -171,7 +173,9 @@ def speech_to_chat():
             }), 400
         
         # Get parameters
-        language = request.form.get('language', 'ar-MA')  # Defaults to Moroccan Arabic
+        language = request.form.get('language', None)  # Defaults to auto-detection
+        if language == '' or language == 'auto':
+            language = None  # Enable auto-detection
         conversation_id = request.form.get('conversation_id')
         
         # Save file temporarily
