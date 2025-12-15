@@ -43,8 +43,9 @@ def recognize_speech_from_file(audio_file_path: str, language: str = None) -> Tu
             )
         else:
             # Auto-detect language from multiple candidates
+            # Priority: French first to avoid false Darija detection
             auto_detect_source_language_config = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
-                languages=["ar-SA", "ar-MA", "ar-EG", "fr-FR", "en-US", "es-ES"]
+                languages=["fr-FR", "ar-MA", "ar-SA", "en-US", "es-ES"]
             )
             speech_recognizer = speechsdk.SpeechRecognizer(
                 speech_config=speech_config,
@@ -122,8 +123,9 @@ def recognize_speech_from_bytes(audio_data: bytes, audio_format: str = "wav", la
             )
         else:
             # Auto-detect language from multiple candidates
+            # Priority: French first to avoid false Darija detection
             auto_detect_source_language_config = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
-                languages=["ar-SA", "ar-MA", "ar-EG", "fr-FR", "en-US", "es-ES"]
+                languages=["fr-FR", "ar-MA", "ar-SA", "en-US", "es-ES"]
             )
             speech_recognizer = speechsdk.SpeechRecognizer(
                 speech_config=speech_config,
