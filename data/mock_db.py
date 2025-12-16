@@ -24,7 +24,14 @@ water_invoices_table = pd.DataFrame({
     'user_id': [1, 2, 3, 5],
     'is_paid': [True, True, True, False],
     'outstanding_balance': [0.0, 0.0, 0.0, 450.0],
-    'last_payment_date': ['2026-01-15', '2026-01-08', '2026-01-28', '2026-01-15'],
+    # ISO timestamps capture exact payment time for reactivation logic (up to 2h delay)
+    'last_payment_datetime': [
+        '2025-12-15T09:00:00',  # Paid yesterday morning
+        '2025-12-16T09:30:00',  # Paid ~recently (possible reactivation window)
+        '2025-12-01T14:20:00',  # Paid earlier in the month
+        None                    # Unpaid
+    ],
+    'last_payment_date': ['2025-12-15', '2025-12-16', '2025-12-01', '2025-12-15'],
     'cut_status': ['OK', 'OK', 'OK', 'CUT_OFF'],
     'cut_reason': [None, None, None, 'Non-payment']
 })
@@ -36,7 +43,13 @@ electricity_invoices_table = pd.DataFrame({
     'user_id': [1, 3, 4, 5],
     'is_paid': [True, True, True, False],
     'outstanding_balance': [0.0, 0.0, 0.0, 440.0],
-    'last_payment_date': ['2026-01-15', '2026-01-28', '2026-01-10', '2026-01-15'],
+    'last_payment_datetime': [
+        '2025-12-15T09:00:00',  # Paid yesterday morning
+        '2025-12-16T09:10:00',  # Paid ~recently (possible reactivation window)
+        '2025-12-05T11:45:00',  # Paid earlier
+        None                    # Unpaid
+    ],
+    'last_payment_date': ['2025-12-15', '2025-12-16', '2025-12-05', '2025-12-15'],
     'cut_status': ['OK', 'OK', 'OK', 'CUT_OFF'],
     'cut_reason': [None, None, None, 'Non-payment']
 })
