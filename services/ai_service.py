@@ -1,7 +1,7 @@
 """
 AI Service using LangChain and Azure OpenAI.
 Defines the agent, tools, and Arabic language prompts.
-Refactored to support separate water and electricity contracts.
+Refactored to support separate water and electricity contracts nice.
 """
 from typing import Optional, Dict, Any, List
 from datetime import datetime
