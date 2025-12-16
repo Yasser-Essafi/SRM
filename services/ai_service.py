@@ -4,6 +4,7 @@ Defines the agent, tools, and Arabic language prompts.
 Refactored to support separate water and electricity contracts.
 """
 from typing import Optional, Dict, Any, List
+from datetime import datetime
 from langchain_core.tools import tool
 from langchain_openai import AzureChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -11,6 +12,33 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, Tool
 from langchain_core.runnables import RunnablePassthrough
 from config.settings import settings
 from data.mock_db import get_user_by_water_contract, get_user_by_electricity_contract, get_zone_by_id
+
+
+def _build_reactivation_note(payment_timestamp: Optional[str], service_label: str) -> str:
+    """Return a short bilingual note if payment is recent and reactivation (<=2h) may still be running."""
+    if not payment_timestamp:
+        return ""
+    try:
+        paid_at = datetime.fromisoformat(payment_timestamp)
+    except ValueError:
+        return ""
+
+    now = datetime.now()
+    if paid_at > now:
+        return ""
+
+    elapsed_seconds = (now - paid_at).total_seconds()
+    window_seconds = 2 * 60 * 60  # 2 hours
+    if elapsed_seconds < window_seconds:
+        remaining_minutes = max(1, int((window_seconds - elapsed_seconds) // 60))
+        paid_at_str = paid_at.strftime('%Y-%m-%d %H:%M')
+        return (
+            f"⏳ خدمة {service_label}: تم استقبال الدفع في {paid_at_str}. "
+            f"قد تستغرق إعادة التفعيل حتى ساعتين، يرجى الانتظار ~{remaining_minutes} دقيقة، وعدم إعادة فتح بلاغ جديد خلال هذه المدة.\n"
+            f"Reactivation in progress for {service_label}. Payment received at {paid_at_str}. "
+            f"Please allow up to 2 hours (~{remaining_minutes} minutes remaining) and avoid opening a new ticket during this window."
+        )
+    return ""
 
 
 # Tool Functions for Water Service
@@ -25,8 +53,10 @@ def _check_water_payment_impl(water_contract: str) -> str:
     is_paid = user['is_paid']
     outstanding_balance = user['outstanding_balance']
     last_payment = user['last_payment_date']
+    payment_timestamp = user.get('last_payment_datetime')
     cut_status = user['cut_status']
     cut_reason = user.get('cut_reason')
+    reactivation_note = _build_reactivation_note(payment_timestamp, 'water')
     
     if is_paid:
         return f"""
@@ -37,6 +67,8 @@ Payment Status: ✅ Paid (مدفوع)
 Last Payment: {last_payment}
 Outstanding Balance: {outstanding_balance} MAD
 Service Status: {cut_status}
+
+{reactivation_note}
 
 Note: Water payment is up to date. If water service is interrupted, it may be due to maintenance in the area.
 """
@@ -117,8 +149,10 @@ def _check_electricity_payment_impl(electricity_contract: str) -> str:
     is_paid = user['is_paid']
     outstanding_balance = user['outstanding_balance']
     last_payment = user['last_payment_date']
+    payment_timestamp = user.get('last_payment_datetime')
     cut_status = user['cut_status']
     cut_reason = user.get('cut_reason')
+    reactivation_note = _build_reactivation_note(payment_timestamp, 'electricity')
     
     if is_paid:
         return f"""
@@ -129,6 +163,8 @@ Payment Status: ✅ Paid (مدفوع)
 Last Payment: {last_payment}
 Outstanding Balance: {outstanding_balance} MAD
 Service Status: {cut_status}
+
+{reactivation_note}
 
 Note: Electricity payment is up to date. If electricity service is interrupted, it may be due to maintenance in the area.
 """
@@ -398,6 +434,9 @@ Important rules:
 - If the issue is maintenance, provide estimated repair time in conversational style
 - For local technical issues, provide technical support number: 05-22-XX-XX-XX
 - Do not invent information - only use available tools
+
+⚠️ Reactivation rule (recent payment):
+- If the tool output mentions reactivation in progress or waiting after a recent payment, you MUST tell the customer clearly to wait up to 2 hours for service to be restored, and include the time hint from the tool output. Do not drop or paraphrase this note.
 
 Language-specific greetings:
 - Arabic: "مرحباً بك في خدمة عملاء الشركة الجهوية متعددة الاختصاصات. كيف يمكنني مساعدتك اليوم؟"
