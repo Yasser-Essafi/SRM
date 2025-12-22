@@ -44,9 +44,9 @@ electricity_invoices_table = pd.DataFrame({
     'is_paid': [True, True, True, False],
     'outstanding_balance': [0.0, 0.0, 0.0, 440.0],
     'last_payment_datetime': [
-        '2025-12-15T09:00:00',  # Paid yesterday morning
-        '2025-12-16T09:10:00',  # Paid ~recently (possible reactivation window)
-        '2025-12-05T11:45:00',  # Paid earlier
+        '2025-12-22T09:00:00',  # Paid yesterday morning
+        '2025-12-22T14:00:00',  # Paid ~recently (possible reactivation window)
+        '2025-12-22T11:45:00',  # Paid earlier
         None                    # Unpaid
     ],
     'last_payment_date': ['2025-12-15', '2025-12-16', '2025-12-05', '2025-12-15'],
@@ -63,7 +63,7 @@ zones_table = pd.DataFrame({
     'outage_reason': ['إصلاح أنابيب المياه الرئيسية', None, None, 'صيانة محولات الكهرباء', None],
     'estimated_restoration': ['2025-12-25 18:00', None, None, '2025-12-25 14:00', None],
     'affected_services': ['ماء', None, None, 'كهرباء', None],
-    'status_updated': ['2026-12-03 08:00', '2026-12-01 10:00', '2026-12-01 10:00', '2026-12-03 06:00', '2026-12-01 10:00']
+    'status_updated': ['2025-12-25 08:00', '2025-12-25 10:00', '2025-12-25 10:00', '2025-12-25 06:00', '2025-12-25 10:00']
 })
 
 
