@@ -25,6 +25,14 @@ class Settings:
     # Azure Speech Configuration
     AZURE_SPEECH_KEY: Optional[str] = os.getenv("AZURE_SPEECH_KEY")
     AZURE_SPEECH_REGION: Optional[str] = os.getenv("AZURE_SPEECH_REGION", "francecentral")
+    
+    # Azure SQL Database Configuration
+    AZURE_SQL_SERVER: Optional[str] = os.getenv("AZURE_SQL_SERVER")
+    AZURE_SQL_DATABASE: Optional[str] = os.getenv("AZURE_SQL_DATABASE")
+    AZURE_SQL_USERNAME: Optional[str] = os.getenv("AZURE_SQL_USERNAME")
+    AZURE_SQL_PASSWORD: Optional[str] = os.getenv("AZURE_SQL_PASSWORD")
+    AZURE_SQL_DRIVER: str = os.getenv("AZURE_SQL_DRIVER", "ODBC Driver 18 for SQL Server")
+    
     # Application Constants
     APP_TITLE: str = "نظام خدمة العملاء - SRM"
     APP_ICON: str = "💧"
@@ -33,12 +41,12 @@ class Settings:
     def validate(cls) -> tuple[bool, list[str]]:
         """
         Validate that all required settings are present.
-        
+        If using Windows Authentication (Trusted_Connection),
+        AZURE_SQL_USERNAME and AZURE_SQL_PASSWORD are not required.
         Returns:
             tuple: (is_valid, list_of_missing_keys)
         """
         missing_keys = []
-        
         if not cls.AZURE_OPENAI_API_KEY:
             missing_keys.append("AZURE_OPENAI_API_KEY")
         if not cls.AZURE_OPENAI_ENDPOINT:
@@ -49,6 +57,18 @@ class Settings:
             missing_keys.append("AZURE_DOCUMENT_INTELLIGENCE_KEY")
         if not cls.AZURE_SPEECH_KEY:
             missing_keys.append("AZURE_SPEECH_KEY")
+        if not cls.AZURE_SQL_SERVER:
+            missing_keys.append("AZURE_SQL_SERVER")
+        if not cls.AZURE_SQL_DATABASE:
+            missing_keys.append("AZURE_SQL_DATABASE")
+
+        # Only require username/password if at least one is non-empty (assume Trusted_Connection if both are empty)
+        if (cls.AZURE_SQL_USERNAME or cls.AZURE_SQL_PASSWORD):
+            if not cls.AZURE_SQL_USERNAME:
+                missing_keys.append("AZURE_SQL_USERNAME")
+            if not cls.AZURE_SQL_PASSWORD:
+                missing_keys.append("AZURE_SQL_PASSWORD")
+
         is_valid = len(missing_keys) == 0
         return is_valid, missing_keys
     

@@ -12,4 +12,5 @@ Flask==3.0.0
 Flask-CORS==4.0.0
 gunicorn==21.2.0
 azure-cognitiveservices-speech==1.38.0
-
+# Azure SQL Database
+pyodbc==5.0.1

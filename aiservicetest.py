@@ -1,7 +1,7 @@
 """
 AI Service using LangChain and Azure OpenAI.
 Defines the agent, tools, and Arabic language prompts.
-Refactored to support separate water and electricity contracts nice.
+Refactored to support separate water and electricity contracts.
 """
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -10,9 +10,8 @@ from langchain_openai import AzureChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnablePassthrough
-import json
 from config.settings import settings
-from data.sql_db import get_user_by_water_contract, get_user_by_electricity_contract, get_zone_by_id
+from data.mock_db import get_user_by_water_contract, get_user_by_electricity_contract, get_zone_by_id
 
 
 def _build_reactivation_note(payment_timestamp: Optional[str], service_label: str) -> str:
@@ -560,70 +559,3 @@ def run_agent(agent: AzureChatOpenAI, user_input: str, chat_history: list = None
     except Exception as e:
         print(f"Error running agent: {str(e)}")
         return f"عذراً، حدث خطأ: {str(e)}"
-ACTION_EXTRACTOR_PROMPT = """You extract payment actions from a customer service conversation.
-Return ONLY valid JSON. No markdown, no extra text.
-
-If the user wants to pay an invoice AND the conversation contains (or implies) a contract number and service type, output:
-{
-  "type": "PAY_INVOICE",
-  "contract_number": "<as shown, e.g. 4801567001 / 2025986>",
-  "invoice_type": "electricity" | "water"
-}
-
-If user wants to pay but contract_number is missing, output:
-{ "type": "NEED_CONTRACT", "invoice_type": "electricity" | "water" | null }
-
-If payment intent is not present, output:
-{ "type": null }
-
-Rules:
-- Use conversation context, not regex.
-- Infer invoice_type from language cues and context (electricity/water).
-- If both exist, pick the one the user is paying now (usually the last mentioned).
-"""
-
-def _get_action_llm() -> AzureChatOpenAI:
-    # Use a dedicated LLM WITHOUT tools to avoid tool_calls messing up JSON
-    return AzureChatOpenAI(
-        azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-        api_key=settings.AZURE_OPENAI_API_KEY,
-        api_version=settings.AZURE_OPENAI_API_VERSION,
-        deployment_name=settings.AZURE_OPENAI_DEPLOYMENT_NAME,
-        temperature=0.0,
-        max_tokens=250,
-    )
-
-def extract_action(user_input: str, chat_history: list) -> dict:
-    """LLM-based action extraction from context (no regex)."""
-    history_text = "\n".join(
-        [f"{m.get('role')}: {m.get('content')}" for m in (chat_history or [])]
-    )
-
-    prompt = (
-        f"Conversation:\n{history_text}\n\n"
-        f"Last user message:\n{user_input}\n\n"
-        f"JSON:"
-    )
-
-    llm = _get_action_llm()
-
-    # ✅ IMPORTANT: pass a LIST of BaseMessages (not a dict)
-    resp = llm.invoke([
-        SystemMessage(content=ACTION_EXTRACTOR_PROMPT),
-        HumanMessage(content=prompt),
-    ])
-
-    content = (resp.content or "").strip()
-
-    # small safety cleanup if model adds ```json ... ```
-    if content.startswith("```"):
-        content = content.strip("`")
-        content = content.replace("json", "", 1).strip()
-
-    try:
-        data = json.loads(content)
-        if not isinstance(data, dict):
-            return {"type": None}
-        return data
-    except Exception:
-        return {"type": None}

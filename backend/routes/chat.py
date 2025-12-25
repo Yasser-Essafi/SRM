@@ -1,11 +1,13 @@
 """
 Chat API endpoints for agent interactions.
 """
+import pyodbc
+from config.settings import settings
 from flask import Blueprint, request, jsonify, send_file
 from io import BytesIO
-from services.ai_service import initialize_agent, run_agent
+from services.ai_service import initialize_agent, run_agent, extract_action
 from services.speech_service import text_to_speech
-from data.mock_db import (
+from data.conversations import (
     create_conversation, 
     get_conversation, 
     add_message_to_conversation,
@@ -18,6 +20,77 @@ chat_bp = Blueprint('chat', __name__)
 agent = None
 
 
+# Utility function to get DB connection
+def get_connection():
+    conn_str = (
+        f"Driver={{ODBC Driver 18 for SQL Server}};"
+        f"Server={settings.AZURE_SQL_SERVER};"
+        f"Database={settings.AZURE_SQL_DATABASE};"
+        f"Trusted_Connection=yes;"
+        f"Encrypt=no;"
+    )
+    return pyodbc.connect(conn_str)
+
+@chat_bp.route('/pay_invoice', methods=['POST'])   # <-- if you kept url_prefix='/api' in app.py
+def pay_invoice():
+    data = request.get_json() or {}
+    contract_number = (data.get('contract_number') or "").strip()
+    invoice_type = (data.get('invoice_type') or "electricity").strip().lower()
+
+    if not contract_number:
+        return jsonify({'success': False, 'message': 'Contract number required.'}), 400
+
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        if invoice_type == 'electricity':
+            cursor.execute("""
+                UPDATE electricity_invoices
+                SET
+                    is_paid = 1,
+                    outstanding_balance = 0,
+                    last_payment_datetime = GETDATE(),
+                    last_payment_date = CONVERT(date, GETDATE()),
+                    cut_status = 'OK',
+                    cut_reason = NULL
+                WHERE electricity_contract_number = ?
+            """, contract_number)
+
+        elif invoice_type == 'water':
+            cursor.execute("""
+                UPDATE water_invoices
+                SET
+                    is_paid = 1,
+                    outstanding_balance = 0,
+                    last_payment_datetime = GETDATE(),
+                    last_payment_date = CONVERT(date, GETDATE()),
+                    cut_status = 'OK',
+                    cut_reason = NULL
+                WHERE water_contract_number = ?
+            """, contract_number)
+
+        else:
+            return jsonify({'success': False, 'message': 'Invalid invoice type.'}), 400
+
+        # If no row matched the contract number
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return jsonify({'success': False, 'message': 'Contract not found.'}), 404
+
+        conn.commit()
+        return jsonify({'success': True, 'message': 'Paid successfully!'})
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+    finally:
+        try:
+            cursor.close()
+            conn.close()
+        except:
+            pass
+
 def get_agent():
     """Get or create the AI agent."""
     global agent
@@ -25,45 +98,29 @@ def get_agent():
         agent = initialize_agent()
     return agent
 
-
 @chat_bp.route('/chat', methods=['POST'])
 def chat():
     """
     Chat endpoint for user messages.
-    
-    Request Body:
-        {
-            "message": "رقم العقد الخاص بي هو: 3701455886 / 1014871",
-            "conversation_id": "optional-uuid-string",
-            "language": "ar" // optional: "ar" (Arabic), "en" (English), "fr" (French)
-        }
-    
-    Returns:
-        JSON: {
-            "response": "...",
-            "conversation_id": "uuid-string",
-            "status": "success"
-        }
     """
     try:
         data = request.get_json()
-        
+
         if not data or 'message' not in data:
             return jsonify({
                 'error': 'Missing required field: message',
                 'error_ar': 'الرجاء تقديم رسالة'
             }), 400
-        
+
         user_message = data['message']
         conversation_id = data.get('conversation_id')
         language = data.get('language', 'ar')  # Default to Arabic
-        
+
         # Create new conversation if no ID provided
         if not conversation_id:
             conversation_id = create_conversation()
             is_new_conversation = True
         else:
-            # Verify conversation exists
             conversation = get_conversation(conversation_id)
             if not conversation:
                 return jsonify({
@@ -71,10 +128,10 @@ def chat():
                     'error_ar': 'معرف المحادثة غير صالح'
                 }), 404
             is_new_conversation = False
-        
+
         # Get conversation history (without current message)
         chat_history = get_conversation_history(conversation_id)
-        
+
         # Get agent
         agent_instance = get_agent()
         if not agent_instance:
@@ -82,27 +139,43 @@ def chat():
                 'error': 'Agent initialization failed',
                 'error_ar': 'فشل تهيئة النظام'
             }), 500
-        
-        # Run agent with conversation history and language preference
-        response = run_agent(agent_instance, user_message, chat_history, language)
-        
-        # Store user message and assistant response AFTER agent processing
-        add_message_to_conversation(conversation_id, 'user', user_message)
-        add_message_to_conversation(conversation_id, 'assistant', response)
-        
-        return jsonify({
-            'response': response,
+
+        # 1) Main assistant response
+        response_text = run_agent(agent_instance, user_message, chat_history, language)
+
+        # 2) Action extraction (from context)
+        action = extract_action(user_message, chat_history)
+
+        payload = {
+            'status': 'success',
+            'response': response_text,
             'conversation_id': conversation_id,
             'is_new_conversation': is_new_conversation,
-            'status': 'success'
-        }), 200
-        
+        }
+
+        if action.get("type") == "PAY_INVOICE":
+            payload["action"] = {
+                "type": "PAY_INVOICE",
+                "contract_number": action.get("contract_number"),
+                "invoice_type": action.get("invoice_type"),
+            }
+        elif action.get("type") == "NEED_CONTRACT":
+            payload["action"] = {
+                "type": "NEED_CONTRACT",
+                "invoice_type": action.get("invoice_type"),
+            }
+
+        # Store messages AFTER processing
+        add_message_to_conversation(conversation_id, 'user', user_message)
+        add_message_to_conversation(conversation_id, 'assistant', response_text)
+
+        return jsonify(payload), 200
+
     except Exception as e:
         return jsonify({
             'error': str(e),
             'error_ar': 'حدث خطأ في المعالجة'
         }), 500
-
 
 @chat_bp.route('/chat/reset', methods=['POST'])
 def reset_chat():
