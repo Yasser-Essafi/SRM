@@ -6,6 +6,15 @@ from config.settings import settings
 from flask import Blueprint, request, jsonify, send_file
 from io import BytesIO
 from services.ai_service import initialize_agent, run_agent, extract_action
+
+def _explicit_pay_intent(text: str) -> bool:
+    t = (text or "").lower()
+    keywords = [
+        "أريد الدفع", "اريد الدفع", "بغيت نخلص", "نخلص", "خلص", "ادفع", "أدفع",
+        "pay", "pay now", "payer", "paiement", "je veux payer"
+    ]
+    return any(k.lower() in t for k in keywords)
+
 from services.speech_service import text_to_speech
 from data.conversations import (
     create_conversation, 
@@ -31,7 +40,8 @@ def get_connection():
     )
     return pyodbc.connect(conn_str)
 
-@chat_bp.route('/pay_invoice', methods=['POST'])   # <-- if you kept url_prefix='/api' in app.py
+
+@chat_bp.route('/pay_invoice', methods=['POST'])
 def pay_invoice():
     data = request.get_json() or {}
     contract_number = (data.get('contract_number') or "").strip()
@@ -46,12 +56,12 @@ def pay_invoice():
 
         if invoice_type == 'electricity':
             cursor.execute("""
-                UPDATE electricity_invoices
+                UPDATE dbo.electricity_invoices
                 SET
                     is_paid = 1,
                     outstanding_balance = 0,
-                    last_payment_datetime = GETDATE(),
-                    last_payment_date = CONVERT(date, GETDATE()),
+                    last_payment_datetime = SYSUTCDATETIME(),
+                    last_payment_date = CONVERT(date, SYSUTCDATETIME()),
                     cut_status = 'OK',
                     cut_reason = NULL
                 WHERE electricity_contract_number = ?
@@ -59,12 +69,12 @@ def pay_invoice():
 
         elif invoice_type == 'water':
             cursor.execute("""
-                UPDATE water_invoices
+                UPDATE dbo.water_invoices
                 SET
                     is_paid = 1,
                     outstanding_balance = 0,
-                    last_payment_datetime = GETDATE(),
-                    last_payment_date = CONVERT(date, GETDATE()),
+                    last_payment_datetime = SYSUTCDATETIME(),
+                    last_payment_date = CONVERT(date, SYSUTCDATETIME()),
                     cut_status = 'OK',
                     cut_reason = NULL
                 WHERE water_contract_number = ?
@@ -73,7 +83,6 @@ def pay_invoice():
         else:
             return jsonify({'success': False, 'message': 'Invalid invoice type.'}), 400
 
-        # If no row matched the contract number
         if cursor.rowcount == 0:
             conn.rollback()
             return jsonify({'success': False, 'message': 'Contract not found.'}), 404
@@ -142,6 +151,9 @@ def chat():
 
         # 1) Main assistant response
         response_text = run_agent(agent_instance, user_message, chat_history, language)
+        if not isinstance(response_text, str) or not response_text.strip():
+            response_text = "عذراً، لم أتمكن من توليد رد واضح. هل يمكنك توضيح طلبك؟"
+
 
         # 2) Action extraction (from context)
         action = extract_action(user_message, chat_history)
@@ -161,7 +173,7 @@ def chat():
             }
         elif action.get("type") == "NEED_CONTRACT":
             payload["action"] = {
-                "type": "NEED_CONTRACT",
+                "type": "NEED_CONTRACT",   
                 "invoice_type": action.get("invoice_type"),
             }
 

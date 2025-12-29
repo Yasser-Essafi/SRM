@@ -14,31 +14,32 @@ from config.settings import settings
 from data.mock_db import get_user_by_water_contract, get_user_by_electricity_contract, get_zone_by_id
 
 
-def _build_reactivation_note(payment_timestamp: Optional[str], service_label: str) -> str:
-    """Return a short bilingual note if payment is recent and reactivation (<=2h) may still be running."""
+def _build_reactivation_note(payment_timestamp, service_label: str) -> str:
     if not payment_timestamp:
         return ""
-    try:
-        paid_at = datetime.fromisoformat(payment_timestamp)
-    except ValueError:
-        return ""
+
+    if isinstance(payment_timestamp, datetime):
+        paid_at = payment_timestamp
+    else:
+        try:
+            paid_at = datetime.strptime(str(payment_timestamp).strip(), "%b %d %Y %I:%M%p")
+        except Exception:
+            return ""
 
     now = datetime.now()
-    if paid_at > now:
-        return ""
-
+    window_seconds = 2 * 60  # ✅ 2 minutes
     elapsed_seconds = (now - paid_at).total_seconds()
-    window_seconds = 2 * 60 * 60  # 2 hours
-    if elapsed_seconds < window_seconds:
-        remaining_minutes = max(1, int((window_seconds - elapsed_seconds) // 60))
-        paid_at_str = paid_at.strftime('%Y-%m-%d %H:%M')
+
+    if 0 <= elapsed_seconds < window_seconds:
+        remaining_seconds = max(1, int(window_seconds - elapsed_seconds))
+        paid_at_str = paid_at.strftime("%Y-%m-%d %H:%M:%S")
         return (
-            f"⏳ خدمة {service_label}: تم استقبال الدفع في {paid_at_str}. "
-            f"قد تستغرق إعادة التفعيل حتى ساعتين، يرجى الانتظار ~{remaining_minutes} دقيقة، وعدم إعادة فتح بلاغ جديد خلال هذه المدة.\n"
-            f"Reactivation in progress for {service_label}. Payment received at {paid_at_str}. "
-            f"Please allow up to 2 hours (~{remaining_minutes} minutes remaining) and avoid opening a new ticket during this window."
+            f"⏳ خدمة {service_label}: تم استقبال الدفع في {paid_at_str}. قد تستغرق إعادة التفعيل حتى دقيقتين، يرجى الانتظار حوالي {remaining_seconds} ثانية وعدم فتح بلاغ جديد خلال هذه المدة. "
+            f"Reactivation in progress for {service_label}. Payment received at {paid_at_str}. Please allow up to 2 minutes (~{remaining_seconds} seconds remaining) and avoid opening a new ticket during this window."
         )
+
     return ""
+
 
 
 # Tool Functions for Water Service

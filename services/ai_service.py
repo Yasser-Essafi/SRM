@@ -3,7 +3,7 @@ AI Service using LangChain and Azure OpenAI.
 Defines the agent, tools, and Arabic language prompts.
 Refactored to support separate water and electricity contracts nice.
 """
-from typing import Optional, Dict, Any, List
+from typing import Optional, Union, Dict, Any, List
 from datetime import datetime
 from langchain_core.tools import tool
 from langchain_openai import AzureChatOpenAI
@@ -13,34 +13,46 @@ from langchain_core.runnables import RunnablePassthrough
 import json
 from config.settings import settings
 from data.sql_db import get_user_by_water_contract, get_user_by_electricity_contract, get_zone_by_id
+import re
+from datetime import datetime
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
-def _build_reactivation_note(payment_timestamp: Optional[str], service_label: str) -> str:
-    """Return a short bilingual note if payment is recent and reactivation (<=2h) may still be running."""
-    if not payment_timestamp:
+APP_TZ = ZoneInfo("Africa/Casablanca")
+WINDOW_SECONDS = 2 * 60  # 2 minutes
+
+def _build_reactivation_note(payment_timestamp, service_label: str, seconds_since_payment: int | None) -> str:
+    # Si la DB te donne le diff en secondes, c'est la source de vérité
+    if seconds_since_payment is None:
         return ""
-    try:
-        paid_at = datetime.fromisoformat(payment_timestamp)
-    except ValueError:
+
+    elapsed = float(seconds_since_payment)
+    if elapsed < 0:
+        elapsed = 0.0
+
+    if elapsed >= WINDOW_SECONDS:
         return ""
 
-    now = datetime.now()
-    if paid_at > now:
-        return ""
+    # Pour afficher l’heure du paiement au format Maroc, on convertit le timestamp
+    paid_at_local_str = ""
+    if isinstance(payment_timestamp, datetime):
+        paid_utc = payment_timestamp
+        # pyodbc renvoie souvent naive => ici, ON ASSUME UTC car tu écris avec SYSUTCDATETIME()
+        if paid_utc.tzinfo is None:
+            paid_utc = paid_utc.replace(tzinfo=timezone.utc)
+        paid_at_local_str = paid_utc.astimezone(APP_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
-    elapsed_seconds = (now - paid_at).total_seconds()
-    window_seconds = 2 * 60 * 60  # 2 hours
-    if elapsed_seconds < window_seconds:
-        remaining_minutes = max(1, int((window_seconds - elapsed_seconds) // 60))
-        paid_at_str = paid_at.strftime('%Y-%m-%d %H:%M')
-        return (
-            f"⏳ خدمة {service_label}: تم استقبال الدفع في {paid_at_str}. "
-            f"قد تستغرق إعادة التفعيل حتى ساعتين، يرجى الانتظار ~{remaining_minutes} دقيقة، وعدم إعادة فتح بلاغ جديد خلال هذه المدة.\n"
-            f"Reactivation in progress for {service_label}. Payment received at {paid_at_str}. "
-            f"Please allow up to 2 hours (~{remaining_minutes} minutes remaining) and avoid opening a new ticket during this window."
-        )
-    return ""
+    remaining = max(10, int(WINDOW_SECONDS - elapsed))
+    remaining_minutes = max(1, remaining // 60)
 
+    # pas de markdown, une seule phrase
+    return (
+        f"خدمة {service_label}: تم استقبال الدفع منذ أقل من دقيقتين"
+        + (f" (وقت الدفع: {paid_at_local_str})" if paid_at_local_str else "")
+        + f". قد تحتاج إعادة التفعيل حوالي دقيقتين، يرجى الانتظار حوالي {remaining_minutes} دقيقة وعدم فتح بلاغ جديد خلال هذه المدة."
+    )
 
 # Tool Functions for Water Service
 def _check_water_payment_impl(water_contract: str) -> str:
@@ -55,21 +67,20 @@ def _check_water_payment_impl(water_contract: str) -> str:
     outstanding_balance = user['outstanding_balance']
     last_payment = user['last_payment_date']
     payment_timestamp = user.get('last_payment_datetime')
+    seconds_since = user.get('seconds_since_payment')
     cut_status = user['cut_status']
     cut_reason = user.get('cut_reason')
-    reactivation_note = _build_reactivation_note(payment_timestamp, 'water')
-    
+    reactivation_note = _build_reactivation_note(payment_timestamp, 'الماء', seconds_since)
+
     if is_paid:
-        return f"""
-[WATER_PAYMENT_STATUS: PAID]
+        prefix = (reactivation_note + " ") if reactivation_note else ""
+        return f"""{prefix}[WATER_PAYMENT_STATUS: PAID]
 Customer: {name}
 Service Type: 💧 Water (ماء)
 Payment Status: ✅ Paid (مدفوع)
 Last Payment: {last_payment}
 Outstanding Balance: {outstanding_balance} MAD
 Service Status: {cut_status}
-
-{reactivation_note}
 
 Note: Water payment is up to date. If water service is interrupted, it may be due to maintenance in the area.
 """
@@ -151,21 +162,20 @@ def _check_electricity_payment_impl(electricity_contract: str) -> str:
     outstanding_balance = user['outstanding_balance']
     last_payment = user['last_payment_date']
     payment_timestamp = user.get('last_payment_datetime')
+    seconds_since = user.get('seconds_since_payment')
     cut_status = user['cut_status']
     cut_reason = user.get('cut_reason')
-    reactivation_note = _build_reactivation_note(payment_timestamp, 'electricity')
-    
+    reactivation_note = _build_reactivation_note(payment_timestamp, 'الكهرباء', seconds_since)
+
     if is_paid:
-        return f"""
-[ELECTRICITY_PAYMENT_STATUS: PAID]
+        prefix = (reactivation_note + " ") if reactivation_note else ""
+        return f"""{prefix}[ELECTRICITY_PAYMENT_STATUS: PAID]
 Customer: {name}
 Service Type: ⚡ Electricity (كهرباء)
 Payment Status: ✅ Paid (مدفوع)
 Last Payment: {last_payment}
 Outstanding Balance: {outstanding_balance} MAD
 Service Status: {cut_status}
-
-{reactivation_note}
 
 Note: Electricity payment is up to date. If electricity service is interrupted, it may be due to maintenance in the area.
 """
@@ -249,6 +259,7 @@ def check_water_payment(water_contract: str) -> str:
     Returns:
         str: Water payment status information that you must translate to customer's language
     """
+
     return _check_water_payment_impl(water_contract)
 
 
@@ -437,7 +448,7 @@ Important rules:
 - Do not invent information - only use available tools
 
 ⚠️ Reactivation rule (recent payment):
-- If the tool output mentions reactivation in progress or waiting after a recent payment, you MUST tell the customer clearly to wait up to 2 hours for service to be restored, and include the time hint from the tool output. Do not drop or paraphrase this note.
+- If the tool output mentions reactivation in progress or waiting after a recent payment, you MUST tell the customer clearly to wait up to 2 minutes for service to be restored, and include the time hint from the tool output. Do not drop or paraphrase this note.
 
 Language-specific greetings:
 - Arabic: "مرحباً بك في خدمة عملاء الشركة الجهوية متعددة الاختصاصات. كيف يمكنني مساعدتك اليوم؟"
@@ -486,101 +497,223 @@ def get_agent_executor() -> Optional[AzureChatOpenAI]:
     return initialize_agent()
 
 
-def run_agent(agent: AzureChatOpenAI, user_input: str, chat_history: list = None, language: str = 'ar') -> str:
-    """
-    Run the agent with user input.
-    
-    Args:
-        agent: The LLM with bound tools
-        user_input: User's message
-        chat_history: Previous chat messages
-        language: Preferred response language ('ar', 'en', 'fr')
-        
-    Returns:
-        str: Agent's response
-    """
+# détecte "3701.... / ...." ou "4801.... / ...." (espaces optionnels)
+WATER_RE = re.compile(r"(3701\d{6,}\s*/\s*\d{4,})")
+ELEC_RE  = re.compile(r"(4801\d{6,}\s*/\s*\d{4,})")
+
+def run_agent(agent: AzureChatOpenAI, user_input: str, chat_history: list = None, language: str = "ar") -> str:
+    def _one_line(text: str) -> str:
+        return " ".join((text or "").split())
+
+    def _extract_reactivation_note(tool_text: str) -> str:
+        if not tool_text:
+            return ""
+        for line in str(tool_text).splitlines():
+            s = line.strip()
+            if s.startswith("خدمة ") and "تم استقبال الدفع" in s:
+                return s
+        return ""
+
+    # ✅ réponse déterministe eau
+    def _answer_water(contract: str) -> str:
+        user = get_user_by_water_contract(contract)
+        if not user:
+            return _one_line(f"لم أتمكن من العثور على عقد الماء {contract}. يرجى التأكد من الرقم أو إرسال صورة واضحة من الفاتورة.")
+
+        zone = get_zone_by_id(user["zone_id"]) if user.get("zone_id") is not None else None
+
+        payment_ts = user.get("last_payment_datetime")
+        seconds_since = user.get("seconds_since_payment")
+        # مهم: استعمل label عربي باش يكون مفهوم
+        note = _build_reactivation_note(payment_ts, "الماء", seconds_since)
+
+        is_paid = bool(user.get("is_paid"))
+        outstanding = float(user.get("outstanding_balance") or 0.0)
+        cut_status = (user.get("cut_status") or "").strip()
+        zone_name = (zone.get("zone_name") if zone else "") or "منطقتك"
+        maint_status = (zone.get("maintenance_status") if zone else "") or ""
+        affected = str(zone.get("affected_services") or "") if zone else ""
+        outage_reason = (zone.get("outage_reason") if zone else "") or ""
+        estimated = (zone.get("estimated_restoration") if zone else "") or ""
+
+        # 1) صيانة الماء شغالة؟
+        if maint_status == "جاري الصيانة" and "ماء" in affected:
+            base = f"بعد التحقق من عقد الماء {contract}، توجد أعمال صيانة للماء في {zone_name} حالياً."
+            if outage_reason:
+                base += f" سبب الانقطاع: {outage_reason}."
+            if estimated:
+                base += f" الوقت المتوقع لعودة الخدمة: {estimated}."
+            if note:
+                # حتى مع الصيانة، إذا الدفع كان للتو، نخلي note في البداية
+                return _one_line(f"{note} {base}")
+            return _one_line(base)
+
+        # 2) غير مدفوع؟
+        if (not is_paid) or (outstanding > 0.0):
+            return _one_line(
+                f"بعد التحقق من عقد الماء {contract}، يظهر أن هناك مبلغاً مستحقاً قدره {outstanding:.2f} درهم وأن حالة الدفع غير مكتملة. "
+                f"يرجى أداء المبلغ لتفادي الانقطاع أو لإرجاع الخدمة، وبعد الدفع قد تحتاج عملية التفعيل بعض الوقت."
+            )
+
+        # 3) مدفوع + لا صيانة
+        # ✅ هنا أهم نقطة: إذا note موجودة لازم تظهر دائماً
+        if note:
+            return _one_line(
+                f"{note} بعد التحقق من عقد الماء {contract}، دفعاتك محدثة ولا توجد صيانة للماء في {zone_name} حالياً. "
+                f"إذا كان الانقطاع مستمراً بعد انتهاء مدة الدقيقتين، فالسبب غالباً تقني في منزلك. "
+                f"أنصحك بالاتصال بالدعم الفني على الرقم 05-22-XX-XX-XX لإرسال تقني لفحص التوصيلات وعداد الماء."
+            )
+
+        # إذا ماكانش دفع حديث (<2 min)
+        return _one_line(
+            f"بعد التحقق من عقد الماء {contract}، دفعاتك محدثة ولا توجد صيانة للماء في {zone_name} حالياً وحالة الخدمة في النظام {cut_status or 'OK'}. "
+            f"يبدو أن المشكلة تقنية في منزلك. أنصحك بالاتصال بالدعم الفني على الرقم 05-22-XX-XX-XX لإرسال تقني لفحص التوصيلات وعداد الماء."
+        )
+
+    # ✅ réponse déterministe كهرباء (نفس المنطق)
+    def _answer_elec(contract: str) -> str:
+        user = get_user_by_electricity_contract(contract)
+        if not user:
+            return _one_line(f"لم أتمكن من العثور على عقد الكهرباء {contract}. يرجى التأكد من الرقم أو إرسال صورة واضحة من الفاتورة.")
+
+        zone = get_zone_by_id(user["zone_id"]) if user.get("zone_id") is not None else None
+        payment_ts = user.get("last_payment_datetime")
+        seconds_since = user.get("seconds_since_payment")
+        note = _build_reactivation_note(payment_ts, "الكهرباء", seconds_since)
+
+        is_paid = bool(user.get("is_paid"))
+        outstanding = float(user.get("outstanding_balance") or 0.0)
+        cut_status = (user.get("cut_status") or "").strip()
+        zone_name = (zone.get("zone_name") if zone else "") or "منطقتك"
+        maint_status = (zone.get("maintenance_status") if zone else "") or ""
+        affected = str(zone.get("affected_services") or "") if zone else ""
+        outage_reason = (zone.get("outage_reason") if zone else "") or ""
+        estimated = (zone.get("estimated_restoration") if zone else "") or ""
+
+        if maint_status == "جاري الصيانة" and "كهرباء" in affected:
+            base = f"بعد التحقق من عقد الكهرباء {contract}، توجد أعمال صيانة للكهرباء في {zone_name} حالياً."
+            if outage_reason:
+                base += f" سبب الانقطاع: {outage_reason}."
+            if estimated:
+                base += f" الوقت المتوقع لعودة الخدمة: {estimated}."
+            if note:
+                return _one_line(f"{note} {base}")
+            return _one_line(base)
+
+        if (not is_paid) or (outstanding > 0.0):
+            return _one_line(
+                f"بعد التحقق من عقد الكهرباء {contract}، يظهر أن هناك مبلغاً مستحقاً قدره {outstanding:.2f} درهم وأن حالة الدفع غير مكتملة. "
+                f"يرجى أداء المبلغ لتفادي الانقطاع أو لإرجاع الخدمة، وبعد الدفع قد تحتاج عملية التفعيل بعض الوقت."
+            )
+
+        if note:
+            return _one_line(
+                f"{note} بعد التحقق من عقد الكهرباء {contract}، دفعاتك محدثة ولا توجد صيانة للكهرباء في {zone_name} حالياً. "
+                f"إذا استمر الانقطاع بعد انتهاء مدة الدقيقتين، فالسبب غالباً تقني في منزلك. "
+                f"أنصحك بالاتصال بالدعم الفني على الرقم 05-22-XX-XX-XX."
+            )
+
+        return _one_line(
+            f"بعد التحقق من عقد الكهرباء {contract}، دفعاتك محدثة ولا توجد صيانة للكهرباء في {zone_name} حالياً وحالة الخدمة في النظام {cut_status or 'OK'}. "
+            f"يبدو أن المشكلة تقنية في منزلك. أنصحك بالاتصال بالدعم الفني على الرقم 05-22-XX-XX-XX."
+        )
+
     try:
         if chat_history is None:
             chat_history = []
-        
-        # Language-specific instruction (OVERRIDE automatic detection)
+
+        # ✅ 1) Force DB check if contract is present (MOST IMPORTANT FIX)
+        w = WATER_RE.search(user_input or "")
+        e = ELEC_RE.search(user_input or "")
+
+        if w:
+            return _answer_water(w.group(1).strip())
+        if e:
+            return _answer_elec(e.group(1).strip())
+
+        # ✅ 2) Otherwise fallback to LLM (normal conversation flow)
         language_instruction = {
-            'ar': '\n\n⚠️ CRITICAL OVERRIDE: You MUST respond ONLY in Modern Standard Arabic (فصحى), regardless of the language the user writes in. Ignore rule #1 about language detection.',
-            'en': '\n\n⚠️ CRITICAL OVERRIDE: You MUST respond ONLY in English, regardless of the language the user writes in. Ignore rule #1 about language detection.',
-            'fr': '\n\n⚠️ CRITICAL OVERRIDE: You MUST respond ONLY in French, regardless of the language the user writes in. Ignore rule #1 about language detection.'
-        }.get(language, '\n\n⚠️ CRITICAL OVERRIDE: You MUST respond ONLY in Modern Standard Arabic (فصحى), regardless of the language the user writes in. Ignore rule #1 about language detection.')
-        
-        # Build messages list with language instruction
+            "ar": "\n\n⚠️ CRITICAL OVERRIDE: You MUST respond ONLY in Modern Standard Arabic (فصحى).",
+            "en": "\n\n⚠️ CRITICAL OVERRIDE: You MUST respond ONLY in English.",
+            "fr": "\n\n⚠️ CRITICAL OVERRIDE: You MUST respond ONLY in French.",
+        }.get(language, "\n\n⚠️ CRITICAL OVERRIDE: You MUST respond ONLY in Modern Standard Arabic (فصحى).")
+
         messages = [SystemMessage(content=SYSTEM_PROMPT + language_instruction)]
-        
-        # Add chat history
+
         for msg in chat_history:
-            if msg["role"] == "user":
-                messages.append(HumanMessage(content=msg["content"]))
-            elif msg["role"] == "assistant":
-                messages.append(AIMessage(content=msg["content"]))
-        
-        # Add current user input
+            if msg.get("role") == "user":
+                messages.append(HumanMessage(content=msg.get("content", "")))
+            elif msg.get("role") == "assistant":
+                messages.append(AIMessage(content=msg.get("content", "")))
+
         messages.append(HumanMessage(content=user_input))
-        
-        # Get response from agent
+
         response = agent.invoke(messages)
-        
-        # Check if agent wants to use tools
-        if hasattr(response, 'tool_calls') and response.tool_calls:
-            # Add the AI response with tool calls to messages
+
+        # Tool-calls path (optional)
+        if hasattr(response, "tool_calls") and response.tool_calls:
             messages.append(response)
-            
-            # Execute tools and create tool messages
+            reactivation_hint = ""
+
             for tool_call in response.tool_calls:
-                tool_name = tool_call['name']
-                tool_args = tool_call['args']
-                tool_call_id = tool_call['id']
-                
-                # Find and execute the tool
+                tool_name = tool_call.get("name")
+                tool_args = tool_call.get("args", {})
+                tool_call_id = tool_call.get("id")
+
                 tool_result = None
                 for t in tools:
                     if t.name == tool_name:
                         tool_result = t.invoke(tool_args)
                         break
-                
-                # Add tool message with proper tool_call_id
-                if tool_result:
-                    messages.append(ToolMessage(
-                        content=str(tool_result),
-                        tool_call_id=tool_call_id
-                    ))
-            
-            # Get final response after tool execution
+
+                if tool_result is not None:
+                    hint = _extract_reactivation_note(str(tool_result))
+                    if hint:
+                        reactivation_hint = hint
+
+                    messages.append(ToolMessage(content=str(tool_result), tool_call_id=tool_call_id))
+
             final_response = agent.invoke(messages)
-            return final_response.content
-        
-        return response.content
-        
+            final_text = (final_response.content or "").strip()
+            if reactivation_hint and ("تم استقبال الدفع" not in final_text):
+                final_text = f"{reactivation_hint} {final_text}"
+            return _one_line(final_text)
+
+        return _one_line(response.content or "")
+
     except Exception as e:
-        print(f"Error running agent: {str(e)}")
-        return f"عذراً، حدث خطأ: {str(e)}"
+        print("Error running agent:", str(e))
+        return _one_line(f"عذراً، حدث خطأ: {str(e)}")
+
+
 ACTION_EXTRACTOR_PROMPT = """You extract payment actions from a customer service conversation.
 Return ONLY valid JSON. No markdown, no extra text.
 
-If the user wants to pay an invoice AND the conversation contains (or implies) a contract number and service type, output:
-{
-  "type": "PAY_INVOICE",
-  "contract_number": "<as shown, e.g. 4801567001 / 2025986>",
-  "invoice_type": "electricity" | "water"
-}
+Goal:
+Detect whether the user intends to pay an invoice, using semantic understanding (no keyword lists).
 
-If user wants to pay but contract_number is missing, output:
-{ "type": "NEED_CONTRACT", "invoice_type": "electricity" | "water" | null }
+Output rules:
+- If the user is asking to pay NOW (or requesting to proceed with payment) AND a contract_number is present or clearly implied, output:
+  {
+    "type": "PAY_INVOICE",
+    "contract_number": "<as shown or inferred from context>",
+    "invoice_type": "electricity" | "water"
+  }
 
-If payment intent is not present, output:
-{ "type": null }
+- If the user is asking to pay NOW but contract_number is missing or unclear, output:
+  {
+    "type": "NEED_CONTRACT",
+    "invoice_type": "electricity" | "water" | null
+  }
 
-Rules:
-- Use conversation context, not regex.
-- Infer invoice_type from language cues and context (electricity/water).
-- If both exist, pick the one the user is paying now (usually the last mentioned).
+- Otherwise output:
+  { "type": null }
+
+Constraints:
+- Do NOT set PAY_INVOICE just because a contract number appears. The user must express an intent to pay.
+- Infer invoice_type from context (water/electricity). If not enough info, set invoice_type to null.
 """
+
 
 def _get_action_llm() -> AzureChatOpenAI:
     # Use a dedicated LLM WITHOUT tools to avoid tool_calls messing up JSON
@@ -595,19 +728,17 @@ def _get_action_llm() -> AzureChatOpenAI:
 
 def extract_action(user_input: str, chat_history: list) -> dict:
     """LLM-based action extraction from context (no regex)."""
-    history_text = "\n".join(
-        [f"{m.get('role')}: {m.get('content')}" for m in (chat_history or [])]
-    )
 
-    prompt = (
-        f"Conversation:\n{history_text}\n\n"
-        f"Last user message:\n{user_input}\n\n"
-        f"JSON:"
-    )
+    # ✅ 1) Construire un contexte STRUCTURÉ (JSON)
+    payload = {
+        "history": chat_history or [],
+        "last_user_message": user_input
+    }
+
+    prompt = json.dumps(payload, ensure_ascii=False)
 
     llm = _get_action_llm()
 
-    # ✅ IMPORTANT: pass a LIST of BaseMessages (not a dict)
     resp = llm.invoke([
         SystemMessage(content=ACTION_EXTRACTOR_PROMPT),
         HumanMessage(content=prompt),

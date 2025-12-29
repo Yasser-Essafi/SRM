@@ -48,94 +48,78 @@ def get_connection():
         raise Exception(f"Failed to connect to Azure SQL Database: {str(e)}")
 
 
-def get_user_by_water_contract(water_contract: str) -> Optional[Dict]:
+def get_user_by_water_contract(water_contract: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    query = """
+        SELECT 
+            u.user_id,
+            u.name,
+            u.address,
+            u.phone,
+            u.zone_id,
+            w.water_contract_number,
+            w.is_paid,
+            w.outstanding_balance,
+            w.last_payment_date,
+            w.last_payment_datetime,
+            w.cut_status,
+            w.cut_reason,
+            SYSUTCDATETIME() AS server_now_utc,
+            CASE 
+              WHEN w.last_payment_datetime IS NULL THEN NULL
+              ELSE DATEDIFF(SECOND, w.last_payment_datetime, SYSUTCDATETIME())
+            END AS seconds_since_payment
+        FROM dbo.water_invoices w
+        INNER JOIN dbo.users u ON w.user_id = u.user_id
+        WHERE w.water_contract_number = ? 
+           OR w.water_contract_number LIKE ? + '%'
     """
-    Retrieve user and water invoice information by water contract number.
-    Supports both full format (3701455886 / 1014871) and partial (3701455886).
-    
-    Args:
-        water_contract: Water Contract Number (full or partial)
-        
-    Returns:
-        dict: Combined user and water invoice information or None if not found
-    """
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        
-        # SQL query with JOIN to get user + water invoice data
-        # Supports partial matching by checking if the contract starts with the input
-        query = """
-            SELECT 
-                u.user_id,
-                u.name,
-                u.address,
-                u.phone,
-                u.zone_id,
-                w.water_contract_number,
-                w.is_paid,
-                w.outstanding_balance,
-                w.last_payment_date,
-                w.cut_status,
-                w.cut_reason
-            FROM dbo.water_invoices w
-            INNER JOIN dbo.users u ON w.user_id = u.user_id
-            WHERE w.water_contract_number = ? 
-               OR w.water_contract_number LIKE ? + '%'
-        """
-        
-        cursor.execute(query, (water_contract, water_contract))
-        row = cursor.fetchone()
-        
-        if not row:
-            cursor.close()
-            conn.close()
-            return None
-        
-        # Convert row to dictionary
-        result = {
-            'user_id': row.user_id,
-            'name': row.name,
-            'address': row.address,
-            'phone': row.phone,
-            'zone_id': row.zone_id,
-            'water_contract_number': row.water_contract_number,
-            'is_paid': bool(row.is_paid),
-            'outstanding_balance': float(row.outstanding_balance) if row.outstanding_balance else 0.0,
-            'last_payment_date': str(row.last_payment_date) if row.last_payment_date else None,
-            'cut_status': row.cut_status,
-            'cut_reason': row.cut_reason,
-            'service_type': 'ماء'
-        }
-        
-        cursor.close()
-        conn.close()
-        return result
-        
-    except Exception as e:
-        print(f"Error querying water contract: {str(e)}")
+
+    cursor.execute(query, (water_contract, water_contract))
+    row = cursor.fetchone()
+    if not row:
+        cursor.close(); conn.close()
         return None
 
+    result = {
+        "user_id": row.user_id,
+        "name": row.name,
+        "address": row.address,
+        "phone": row.phone,
+        "zone_id": row.zone_id,
+        "water_contract_number": row.water_contract_number,
+        "is_paid": bool(row.is_paid),
+        "outstanding_balance": float(row.outstanding_balance or 0.0),
+        "last_payment_date": row.last_payment_date,
+        "last_payment_datetime": row.last_payment_datetime,
+        "cut_status": row.cut_status,
+        "cut_reason": row.cut_reason,
+        "seconds_since_payment": int(row.seconds_since_payment) if row.seconds_since_payment is not None else None,
+        "server_now_utc": row.server_now_utc,
+        "service_type": "ماء",
+    }
 
-def get_user_by_electricity_contract(electricity_contract: str) -> Optional[Dict]:
+    cursor.close(); conn.close()
+    return result
+
+
+def get_user_by_electricity_contract(electricity_contract: str):
     """
-    Retrieve user and electricity invoice information by electricity contract number.
+    Retrieve user + electricity invoice info by electricity contract number.
     Supports both full format (4801566997 / 2025982) and partial (4801566997).
-    
-    Args:
-        electricity_contract: Electricity Contract Number (full or partial)
-        
-    Returns:
-        dict: Combined user and electricity invoice information or None if not found
+
+    Adds:
+      - server_now_utc (SYSUTCDATETIME)
+      - seconds_since_payment (DATEDIFF in seconds, based on last_payment_datetime vs SYSUTCDATETIME)
     """
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        
-        # SQL query with JOIN to get user + electricity invoice data
-        # Supports partial matching by checking if the contract starts with the input
+
         query = """
-            SELECT 
+            SELECT
                 u.user_id,
                 u.name,
                 u.address,
@@ -145,42 +129,50 @@ def get_user_by_electricity_contract(electricity_contract: str) -> Optional[Dict
                 e.is_paid,
                 e.outstanding_balance,
                 e.last_payment_date,
+                e.last_payment_datetime,
                 e.cut_status,
-                e.cut_reason
+                e.cut_reason,
+                SYSUTCDATETIME() AS server_now_utc,
+                CASE
+                  WHEN e.last_payment_datetime IS NULL THEN NULL
+                  ELSE DATEDIFF(SECOND, e.last_payment_datetime, SYSUTCDATETIME())
+                END AS seconds_since_payment
             FROM dbo.electricity_invoices e
             INNER JOIN dbo.users u ON e.user_id = u.user_id
-            WHERE e.electricity_contract_number = ? 
+            WHERE e.electricity_contract_number = ?
                OR e.electricity_contract_number LIKE ? + '%'
         """
-        
+
         cursor.execute(query, (electricity_contract, electricity_contract))
         row = cursor.fetchone()
-        
+
         if not row:
             cursor.close()
             conn.close()
             return None
-        
-        # Convert row to dictionary
+
         result = {
-            'user_id': row.user_id,
-            'name': row.name,
-            'address': row.address,
-            'phone': row.phone,
-            'zone_id': row.zone_id,
-            'electricity_contract_number': row.electricity_contract_number,
-            'is_paid': bool(row.is_paid),
-            'outstanding_balance': float(row.outstanding_balance) if row.outstanding_balance else 0.0,
-            'last_payment_date': str(row.last_payment_date) if row.last_payment_date else None,
-            'cut_status': row.cut_status,
-            'cut_reason': row.cut_reason,
-            'service_type': 'كهرباء'
+            "user_id": row.user_id,
+            "name": row.name,
+            "address": row.address,
+            "phone": row.phone,
+            "zone_id": row.zone_id,
+            "electricity_contract_number": row.electricity_contract_number,
+            "is_paid": bool(row.is_paid),
+            "outstanding_balance": float(row.outstanding_balance) if row.outstanding_balance else 0.0,
+            "last_payment_date": row.last_payment_date if row.last_payment_date else None,
+            "last_payment_datetime": row.last_payment_datetime if row.last_payment_datetime else None,
+            "cut_status": row.cut_status,
+            "cut_reason": row.cut_reason,
+            "seconds_since_payment": int(row.seconds_since_payment) if row.seconds_since_payment is not None else None,
+            "server_now_utc": row.server_now_utc,  # datetime (UTC)
+            "service_type": "كهرباء",
         }
-        
+
         cursor.close()
         conn.close()
         return result
-        
+
     except Exception as e:
         print(f"Error querying electricity contract: {str(e)}")
         return None
