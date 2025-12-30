@@ -1,3 +1,68 @@
+import re
+
+
+AR_CHARS = re.compile(r"[\u0600-\u06FF]")
+ARABIZI_DIGITS = re.compile(r"[23579]")  # 3=ع, 7=ح, 9=ق... etc (heuristique)
+DARIJA_TOKENS = re.compile(
+    r"\b(salam|slm|3ndi|andi|bghit|baghi|bghina|n9ol|mchkil|mochkil|dial|dyal|lma|ma|daw|dou|dyo|kahraba|kahr|wach|fin|kifach|chno|ch7al)\b",
+    re.IGNORECASE
+)
+
+def infer_language_from_thread(user_input: str, chat_history: list) -> str:
+    # 1) si le thread était déjà en arabe, garde arabe
+    last_assistant = ""
+    for m in reversed(chat_history or []):
+        if m.get("role") == "assistant":
+            last_assistant = m.get("content", "")
+            break
+    if AR_CHARS.search(last_assistant or ""):
+        return "ar"
+
+    text = (user_input or "").strip()
+
+    # 2) arabe script
+    if AR_CHARS.search(text):
+        return "ar"
+
+    # 3) Arabizi/Darija latin => on force "ar"
+    if ARABIZI_DIGITS.search(text) or DARIJA_TOKENS.search(text):
+        return "ar"
+
+    # 4) FR markers (très simple)
+    tl = " " + text.lower() + " "
+    fr_markers = [" je ", " vous ", " bonjour", " facture", " électricité", " electricite", " eau", " problème", " coupée", " panne"]
+    if any(m in tl for m in fr_markers):
+        return "fr"
+
+    return "en"
+
+
+def detect_service(text: str) -> str:
+    tl = (text or "").lower()
+    water_kw = ["water", "eau", "ماء", "الماء", "ma2", "lma", "robinet"]
+    elec_kw  = ["electricity", "électricité", "electricite", "كهرباء", "الكهرباء", "courant", "prise", "lamp"]
+    has_w = any(k in tl for k in water_kw)
+    has_e = any(k in tl for k in elec_kw)
+    if has_w and has_e:
+        return "both"
+    if has_w:
+        return "water"
+    if has_e:
+        return "electricity"
+    return "unknown"
+
+def mismatch_message(expected: str, got: str, lang: str) -> str:
+    if lang == "fr":
+        return (f"Je comprends que votre problème concerne {expected}, mais vous avez fourni un numéro de contrat {got}. "
+                f"Pouvez-vous m’envoyer le numéro de contrat {expected} ? Si vous ne l’avez pas, envoyez une photo de la facture.")
+    if lang == "en":
+        return (f"I understand your issue is about {expected}, but you provided a {got} contract number. "
+                f"Please send your {expected} contract number. If you don’t have it, upload a photo of the bill.")
+    # ar
+    exp_ar = "الكهرباء" if expected == "electricity" else "الماء"
+    got_ar = "الماء" if got == "water" else "الكهرباء"
+    return (f"أفهم أن مشكلتك تخص {exp_ar}، لكن الرقم الذي أرسلته هو رقم عقد {got_ar}. "
+            f"من فضلك أرسل رقم عقد {exp_ar}، وإذا لم يكن لديك الرقم يمكنك إرسال صورة واضحة من الفاتورة.")
 """
 AI Service using LangChain and Azure OpenAI.
 Defines the agent, tools, and Arabic language prompts.
@@ -23,37 +88,94 @@ from zoneinfo import ZoneInfo
 APP_TZ = ZoneInfo("Africa/Casablanca")
 WINDOW_SECONDS = 2 * 60  # 2 minutes
 
-def _build_reactivation_note(payment_timestamp, service_label: str, seconds_since_payment: int | None) -> str:
-    # Si la DB te donne le diff en secondes, c'est la source de vérité
+def _build_reactivation_note(
+    payment_timestamp: Optional[datetime],
+    service: str,
+    seconds_since_payment: Optional[Union[int, float]],
+    lang: str = "ar",
+    window_seconds: int = WINDOW_SECONDS,
+    assume_naive_tz: timezone = timezone.utc,
+) -> str:
+    """
+    Returns a ONE-LINE note to tell the user to wait up to 2 minutes after a recent payment.
+    - If seconds_since_payment is None or >= window_seconds => returns "" (no note)
+    - If payment_timestamp is naive => assumes UTC by default (assume_naive_tz)
+    - service can be: "water"/"electricity" OR Arabic/French labels; we normalize best-effort.
+    - lang: "ar" | "fr" | "en"
+    """
+
+    # DB seconds is the source of truth
     if seconds_since_payment is None:
         return ""
 
-    elapsed = float(seconds_since_payment)
+    try:
+        elapsed = float(seconds_since_payment)
+    except Exception:
+        return ""
+
     if elapsed < 0:
         elapsed = 0.0
 
-    if elapsed >= WINDOW_SECONDS:
+    if elapsed >= float(window_seconds):
         return ""
 
-    # Pour afficher l’heure du paiement au format Maroc, on convertit le timestamp
+    # Normalize service
+    s = (service or "").strip().lower()
+    if s in ("water", "eau", "الماء", "ماء","lma"):
+        service_key = "water"
+    elif s in ("electricity", "electricite", "électricité", "الكهرباء", "كهرباء","daw"):
+        service_key = "electricity"
+    else:
+        # if caller passes "الماء"/"الكهرباء" or any label, keep it but try to infer
+        if "3701" in s or "water" in s or "eau" in s or "ماء" in s or "الماء" in s:
+            service_key = "water"
+        elif "4801" in s or "electric" in s or "élect" in s or "كهرباء" in s or "الكهرباء" in s:
+            service_key = "electricity"
+        else:
+            service_key = "service"
+
+    labels = {
+        "ar": {"water": "الماء", "electricity": "الكهرباء", "service": "الخدمة"},
+        "fr": {"water": "eau", "electricity": "électricité", "service": "service"},
+        "en": {"water": "water", "electricity": "electricity", "service": "service"},
+    }
+    lang = (lang or "ar").lower()
+    if lang not in labels:
+        lang = "ar"
+
+    service_label = labels[lang].get(service_key, labels[lang]["service"])
+
+    # Format payment time in Morocco time (optional)
     paid_at_local_str = ""
     if isinstance(payment_timestamp, datetime):
-        paid_utc = payment_timestamp
-        # pyodbc renvoie souvent naive => ici, ON ASSUME UTC car tu écris avec SYSUTCDATETIME()
-        if paid_utc.tzinfo is None:
-            paid_utc = paid_utc.replace(tzinfo=timezone.utc)
-        paid_at_local_str = paid_utc.astimezone(APP_TZ).strftime("%Y-%m-%d %H:%M:%S")
+        ts = payment_timestamp
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=assume_naive_tz)
+        paid_at_local_str = ts.astimezone(APP_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
-    remaining = max(10, int(WINDOW_SECONDS - elapsed))
-    remaining_minutes = max(1, remaining // 60)
+    remaining_seconds = max(0, int(round(float(window_seconds) - elapsed)))
+    remaining_minutes = max(1, (remaining_seconds + 59) // 60)  # ceil to minutes, min 1
 
-    # pas de markdown, une seule phrase
-    return (
-        f"خدمة {service_label}: تم استقبال الدفع منذ أقل من دقيقتين"
-        + (f" (وقت الدفع: {paid_at_local_str})" if paid_at_local_str else "")
-        + f". قد تحتاج إعادة التفعيل حوالي دقيقتين، يرجى الانتظار حوالي {remaining_minutes} دقيقة وعدم فتح بلاغ جديد خلال هذه المدة."
-    )
+    if lang == "fr":
+        msg = f"Service {service_label} : paiement reçu il y a moins de deux minutes"
+        if paid_at_local_str:
+            msg += f" (heure du paiement : {paid_at_local_str})"
+        msg += f". La remise en service peut prendre jusqu’à deux minutes, merci d’attendre encore environ {remaining_minutes} minute(s) et d’éviter d’ouvrir une nouvelle réclamation pendant ce délai."
+        return " ".join(msg.split())
 
+    if lang == "en":
+        msg = f"{service_label.capitalize()} service: payment received less than two minutes ago"
+        if paid_at_local_str:
+            msg += f" (payment time: {paid_at_local_str})"
+        msg += f". Reactivation may take up to two minutes, please wait about {remaining_minutes} minute(s) and avoid opening a new ticket during this time."
+        return " ".join(msg.split())
+
+    # Default Arabic (MSA)
+    msg = f"خدمة {service_label}: تم استقبال الدفع منذ أقل من دقيقتين"
+    if paid_at_local_str:
+        msg += f" (وقت الدفع: {paid_at_local_str})"
+    msg += f". قد تحتاج إعادة التفعيل حوالي دقيقتين، يرجى الانتظار حوالي {remaining_minutes} دقيقة وعدم فتح بلاغ جديد خلال هذه المدة."
+    return " ".join(msg.split())
 # Tool Functions for Water Service
 def _check_water_payment_impl(water_contract: str) -> str:
     """Implementation of water payment check - Returns multilingual data."""
@@ -515,65 +637,82 @@ def run_agent(agent: AzureChatOpenAI, user_input: str, chat_history: list = None
         return ""
 
     # ✅ réponse déterministe eau
-    def _answer_water(contract: str) -> str:
+    def _answer_water(contract: str, lang: str) -> str:
         user = get_user_by_water_contract(contract)
         if not user:
+            if lang == "fr":
+                return _one_line(f"Numéro de contrat d'eau introuvable : {contract}. Merci de vérifier ou d'envoyer une photo de la facture.")
+            if lang == "en":
+                return _one_line(f"Water contract number not found: {contract}. Please check or upload a clear photo of the bill.")
             return _one_line(f"لم أتمكن من العثور على عقد الماء {contract}. يرجى التأكد من الرقم أو إرسال صورة واضحة من الفاتورة.")
 
         zone = get_zone_by_id(user["zone_id"]) if user.get("zone_id") is not None else None
 
         payment_ts = user.get("last_payment_datetime")
         seconds_since = user.get("seconds_since_payment")
-        # مهم: استعمل label عربي باش يكون مفهوم
         note = _build_reactivation_note(payment_ts, "الماء", seconds_since)
 
         is_paid = bool(user.get("is_paid"))
         outstanding = float(user.get("outstanding_balance") or 0.0)
         cut_status = (user.get("cut_status") or "").strip()
-        zone_name = (zone.get("zone_name") if zone else "") or "منطقتك"
+        zone_name = (zone.get("zone_name") if zone else "") or ("votre zone" if lang=="fr" else ("your area" if lang=="en" else "منطقتك"))
         maint_status = (zone.get("maintenance_status") if zone else "") or ""
         affected = str(zone.get("affected_services") or "") if zone else ""
         outage_reason = (zone.get("outage_reason") if zone else "") or ""
         estimated = (zone.get("estimated_restoration") if zone else "") or ""
 
-        # 1) صيانة الماء شغالة؟
         if maint_status == "جاري الصيانة" and "ماء" in affected:
-            base = f"بعد التحقق من عقد الماء {contract}، توجد أعمال صيانة للماء في {zone_name} حالياً."
+            base = {
+                "fr": f"Après vérification du contrat d'eau {contract}, des travaux de maintenance de l'eau sont en cours dans {zone_name}.",
+                "en": f"After checking water contract {contract}, water maintenance is ongoing in {zone_name}.",
+                "ar": f"بعد التحقق من عقد الماء {contract}، توجد أعمال صيانة للماء في {zone_name} حالياً."
+            }.get(lang, f"بعد التحقق من عقد الماء {contract}، توجد أعمال صيانة للماء في {zone_name} حالياً.")
             if outage_reason:
                 base += f" سبب الانقطاع: {outage_reason}."
             if estimated:
                 base += f" الوقت المتوقع لعودة الخدمة: {estimated}."
             if note:
-                # حتى مع الصيانة، إذا الدفع كان للتو، نخلي note في البداية
                 return _one_line(f"{note} {base}")
             return _one_line(base)
 
-        # 2) غير مدفوع؟
         if (not is_paid) or (outstanding > 0.0):
+            if lang == "fr":
+                return _one_line(f"Après vérification du contrat d'eau {contract}, un solde impayé de {outstanding:.2f} MAD est détecté. Veuillez régler le montant pour éviter l'interruption ou rétablir le service. Après paiement, la réactivation peut prendre un certain temps.")
+            if lang == "en":
+                return _one_line(f"After checking water contract {contract}, an outstanding balance of {outstanding:.2f} MAD is detected. Please pay to avoid interruption or restore service. After payment, reactivation may take some time.")
             return _one_line(
                 f"بعد التحقق من عقد الماء {contract}، يظهر أن هناك مبلغاً مستحقاً قدره {outstanding:.2f} درهم وأن حالة الدفع غير مكتملة. "
                 f"يرجى أداء المبلغ لتفادي الانقطاع أو لإرجاع الخدمة، وبعد الدفع قد تحتاج عملية التفعيل بعض الوقت."
             )
 
-        # 3) مدفوع + لا صيانة
-        # ✅ هنا أهم نقطة: إذا note موجودة لازم تظهر دائماً
         if note:
+            if lang == "fr":
+                return _one_line(f"{note} Après vérification du contrat d'eau {contract}, vos paiements sont à jour et il n'y a pas de maintenance de l'eau dans {zone_name} actuellement. Si la coupure persiste après deux minutes, il s'agit probablement d'un problème technique chez vous. Merci de contacter le support technique au 05-22-XX-XX-XX.")
+            if lang == "en":
+                return _one_line(f"{note} After checking water contract {contract}, your payments are up to date and there is no water maintenance in {zone_name} currently. If the outage continues after two minutes, it is likely a technical issue at your home. Please contact technical support at 05-22-XX-XX-XX.")
             return _one_line(
                 f"{note} بعد التحقق من عقد الماء {contract}، دفعاتك محدثة ولا توجد صيانة للماء في {zone_name} حالياً. "
                 f"إذا كان الانقطاع مستمراً بعد انتهاء مدة الدقيقتين، فالسبب غالباً تقني في منزلك. "
                 f"أنصحك بالاتصال بالدعم الفني على الرقم 05-22-XX-XX-XX لإرسال تقني لفحص التوصيلات وعداد الماء."
             )
 
-        # إذا ماكانش دفع حديث (<2 min)
+        if lang == "fr":
+            return _one_line(f"Après vérification du contrat d'eau {contract}, vos paiements sont à jour et il n'y a pas de maintenance de l'eau dans {zone_name} actuellement. Si le problème persiste, il s'agit probablement d'un souci technique chez vous. Merci de contacter le support technique au 05-22-XX-XX-XX.")
+        if lang == "en":
+            return _one_line(f"After checking water contract {contract}, your payments are up to date and there is no water maintenance in {zone_name} currently. If the problem persists, it is likely a technical issue at your home. Please contact technical support at 05-22-XX-XX-XX.")
         return _one_line(
             f"بعد التحقق من عقد الماء {contract}، دفعاتك محدثة ولا توجد صيانة للماء في {zone_name} حالياً وحالة الخدمة في النظام {cut_status or 'OK'}. "
             f"يبدو أن المشكلة تقنية في منزلك. أنصحك بالاتصال بالدعم الفني على الرقم 05-22-XX-XX-XX لإرسال تقني لفحص التوصيلات وعداد الماء."
         )
 
     # ✅ réponse déterministe كهرباء (نفس المنطق)
-    def _answer_elec(contract: str) -> str:
+    def _answer_elec(contract: str, lang: str) -> str:
         user = get_user_by_electricity_contract(contract)
         if not user:
+            if lang == "fr":
+                return _one_line(f"Numéro de contrat d'électricité introuvable : {contract}. Merci de vérifier ou d'envoyer une photo de la facture.")
+            if lang == "en":
+                return _one_line(f"Electricity contract number not found: {contract}. Please check or upload a clear photo of the bill.")
             return _one_line(f"لم أتمكن من العثور على عقد الكهرباء {contract}. يرجى التأكد من الرقم أو إرسال صورة واضحة من الفاتورة.")
 
         zone = get_zone_by_id(user["zone_id"]) if user.get("zone_id") is not None else None
@@ -584,14 +723,18 @@ def run_agent(agent: AzureChatOpenAI, user_input: str, chat_history: list = None
         is_paid = bool(user.get("is_paid"))
         outstanding = float(user.get("outstanding_balance") or 0.0)
         cut_status = (user.get("cut_status") or "").strip()
-        zone_name = (zone.get("zone_name") if zone else "") or "منطقتك"
+        zone_name = (zone.get("zone_name") if zone else "") or ("votre zone" if lang=="fr" else ("your area" if lang=="en" else "منطقتك"))
         maint_status = (zone.get("maintenance_status") if zone else "") or ""
         affected = str(zone.get("affected_services") or "") if zone else ""
         outage_reason = (zone.get("outage_reason") if zone else "") or ""
         estimated = (zone.get("estimated_restoration") if zone else "") or ""
 
         if maint_status == "جاري الصيانة" and "كهرباء" in affected:
-            base = f"بعد التحقق من عقد الكهرباء {contract}، توجد أعمال صيانة للكهرباء في {zone_name} حالياً."
+            base = {
+                "fr": f"Après vérification du contrat d'électricité {contract}, des travaux de maintenance de l'électricité sont en cours dans {zone_name}.",
+                "en": f"After checking electricity contract {contract}, electricity maintenance is ongoing in {zone_name}.",
+                "ar": f"بعد التحقق من عقد الكهرباء {contract}، توجد أعمال صيانة للكهرباء في {zone_name} حالياً."
+            }.get(lang, f"بعد التحقق من عقد الكهرباء {contract}، توجد أعمال صيانة للكهرباء في {zone_name} حالياً.")
             if outage_reason:
                 base += f" سبب الانقطاع: {outage_reason}."
             if estimated:
@@ -601,18 +744,30 @@ def run_agent(agent: AzureChatOpenAI, user_input: str, chat_history: list = None
             return _one_line(base)
 
         if (not is_paid) or (outstanding > 0.0):
+            if lang == "fr":
+                return _one_line(f"Après vérification du contrat d'électricité {contract}, un solde impayé de {outstanding:.2f} MAD est détecté. Veuillez régler le montant pour éviter l'interruption ou rétablir le service. Après paiement, la réactivation peut prendre un certain temps.")
+            if lang == "en":
+                return _one_line(f"After checking electricity contract {contract}, an outstanding balance of {outstanding:.2f} MAD is detected. Please pay to avoid interruption or restore service. After payment, reactivation may take some time.")
             return _one_line(
                 f"بعد التحقق من عقد الكهرباء {contract}، يظهر أن هناك مبلغاً مستحقاً قدره {outstanding:.2f} درهم وأن حالة الدفع غير مكتملة. "
                 f"يرجى أداء المبلغ لتفادي الانقطاع أو لإرجاع الخدمة، وبعد الدفع قد تحتاج عملية التفعيل بعض الوقت."
             )
 
         if note:
+            if lang == "fr":
+                return _one_line(f"{note} Après vérification du contrat d'électricité {contract}, vos paiements sont à jour et il n'y a pas de maintenance de l'électricité dans {zone_name} actuellement. Si la coupure persiste après deux minutes, il s'agit probablement d'un problème technique chez vous. Merci de contacter le support technique au 05-22-XX-XX-XX.")
+            if lang == "en":
+                return _one_line(f"{note} After checking electricity contract {contract}, your payments are up to date and there is no electricity maintenance in {zone_name} currently. If the outage continues after two minutes, it is likely a technical issue at your home. Please contact technical support at 05-22-XX-XX-XX.")
             return _one_line(
                 f"{note} بعد التحقق من عقد الكهرباء {contract}، دفعاتك محدثة ولا توجد صيانة للكهرباء في {zone_name} حالياً. "
                 f"إذا استمر الانقطاع بعد انتهاء مدة الدقيقتين، فالسبب غالباً تقني في منزلك. "
                 f"أنصحك بالاتصال بالدعم الفني على الرقم 05-22-XX-XX-XX."
             )
 
+        if lang == "fr":
+            return _one_line(f"Après vérification du contrat d'électricité {contract}, vos paiements sont à jour et il n'y a pas de maintenance de l'électricité dans {zone_name} actuellement. Si le problème persiste, il s'agit probablement d'un souci technique chez vous. Merci de contacter le support technique au 05-22-XX-XX-XX.")
+        if lang == "en":
+            return _one_line(f"After checking electricity contract {contract}, your payments are up to date and there is no electricity maintenance in {zone_name} currently. If the problem persists, it is likely a technical issue at your home. Please contact technical support at 05-22-XX-XX-XX.")
         return _one_line(
             f"بعد التحقق من عقد الكهرباء {contract}، دفعاتك محدثة ولا توجد صيانة للكهرباء في {zone_name} حالياً وحالة الخدمة في النظام {cut_status or 'OK'}. "
             f"يبدو أن المشكلة تقنية في منزلك. أنصحك بالاتصال بالدعم الفني على الرقم 05-22-XX-XX-XX."
@@ -622,21 +777,52 @@ def run_agent(agent: AzureChatOpenAI, user_input: str, chat_history: list = None
         if chat_history is None:
             chat_history = []
 
-        # ✅ 1) Force DB check if contract is present (MOST IMPORTANT FIX)
+        # Detect language from user_input if not provided
+        lang = language or infer_language_from_thread(user_input, chat_history or [])
+
+        # 1. Determine requested service from user_input + chat_history
+        service = detect_service(user_input)
+        # If ambiguous, try to infer from chat_history
+        if service == "unknown" and chat_history:
+            for msg in reversed(chat_history):
+                if msg.get("role") == "user":
+                    service = detect_service(msg.get("content", ""))
+                    if service != "unknown":
+                        break
+
         w = WATER_RE.search(user_input or "")
         e = ELEC_RE.search(user_input or "")
 
-        if w:
-            return _answer_water(w.group(1).strip())
-        if e:
-            return _answer_elec(e.group(1).strip())
+        # 2. Only accept the correct contract type for the requested service
+        if service == "water":
+            if w:
+                return _answer_water(w.group(1).strip(), lang)
+            elif e:
+                # User gave electricity contract for water service
+                return _one_line(mismatch_message("water", "electricity", lang))
+        elif service == "electricity":
+            if e:
+                return _answer_elec(e.group(1).strip(), lang)
+            elif w:
+                # User gave water contract for electricity service
+                return _one_line(mismatch_message("electricity", "water", lang))
+        elif service == "both":
+            # If both, handle sequentially: water first, then electricity
+            if w:
+                return _answer_water(w.group(1).strip(), lang)
+            elif e:
+                # If only electricity contract, ask for water contract first
+                return _one_line(mismatch_message("water", "electricity", lang))
+            else:
+                # No contract provided, fallback to LLM
+                pass
+        # If no contract or ambiguous, fallback to LLM
 
-        # ✅ 2) Otherwise fallback to LLM (normal conversation flow)
         language_instruction = {
             "ar": "\n\n⚠️ CRITICAL OVERRIDE: You MUST respond ONLY in Modern Standard Arabic (فصحى).",
             "en": "\n\n⚠️ CRITICAL OVERRIDE: You MUST respond ONLY in English.",
             "fr": "\n\n⚠️ CRITICAL OVERRIDE: You MUST respond ONLY in French.",
-        }.get(language, "\n\n⚠️ CRITICAL OVERRIDE: You MUST respond ONLY in Modern Standard Arabic (فصحى).")
+        }.get(lang, "\n\n⚠️ CRITICAL OVERRIDE: You MUST respond ONLY in Modern Standard Arabic (فصحى).")
 
         messages = [SystemMessage(content=SYSTEM_PROMPT + language_instruction)]
 

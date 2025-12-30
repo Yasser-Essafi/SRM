@@ -8,14 +8,14 @@ def get_connection():
     """Establish a connection to the Azure SQL Database."""
     try:
         conn_str = (
-                f"Driver={{ODBC Driver 18 for SQL Server}};"
-                f"Server=DESKTOP-4LR0NS8;"
-                f"Database=SRM_DB;"
-                f"Trusted_Connection=yes;"
-                f"Encrypt=no;"
-            )
-           
-        
+            f"Driver={{ODBC Driver 18 for SQL Server}};"
+            f"Server={settings.AZURE_SQL_SERVER};"
+            f"Database={settings.AZURE_SQL_DATABASE};"
+            f"Uid={settings.AZURE_SQL_USERNAME};"
+            f"Pwd={settings.AZURE_SQL_PASSWORD};"
+            f"Encrypt=yes;"
+            f"TrustServerCertificate=no;"
+        )
         conn = pyodbc.connect(conn_str)
         return conn
     except Exception as e:
