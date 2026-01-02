@@ -33,10 +33,13 @@ agent = None
 def get_connection():
     conn_str = (
         f"Driver={{ODBC Driver 18 for SQL Server}};"
-        f"Server={settings.AZURE_SQL_SERVER};"
+        f"Server=tcp:{settings.AZURE_SQL_SERVER},1433;"
         f"Database={settings.AZURE_SQL_DATABASE};"
-        f"Trusted_Connection=yes;"
-        f"Encrypt=no;"
+        f"UID={settings.AZURE_SQL_USERNAME};"
+        f"PWD={settings.AZURE_SQL_PASSWORD};"
+        f"Encrypt=yes;"
+        f"TrustServerCertificate=no;"
+        f"Connection Timeout=30;"
     )
     return pyodbc.connect(conn_str)
 

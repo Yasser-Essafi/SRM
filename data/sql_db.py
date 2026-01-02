@@ -37,6 +37,8 @@ def get_connection():
                 f"Driver={{{settings.AZURE_SQL_DRIVER}}};"
                 f"Server=tcp:{settings.AZURE_SQL_SERVER},1433;"
                 f"Database={settings.AZURE_SQL_DATABASE};"
+                f"UID={settings.AZURE_SQL_USERNAME};"
+                f"PWD={settings.AZURE_SQL_PASSWORD};"
                 f"Encrypt=yes;"
                 f"TrustServerCertificate=no;"
                 f"Connection Timeout=30;"
